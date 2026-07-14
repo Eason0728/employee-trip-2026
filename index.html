@@ -808,7 +808,7 @@
           </select>
         </div>
         <div class="field">
-          <label for="s-fee">自費金額<span class="req">*</span></label>
+          <label for="s-fee">自費金額（員工本人）<span class="req">*</span></label>
           <p class="help-note">請參照旅遊介紹分頁中的「費用方案一覽」表中的條件</p>
           <select id="s-fee" onchange="updateProgress()">
             <option value="">— 請選擇 —</option>
@@ -833,7 +833,7 @@
         </div>
         <div class="field">
           <label for="s-family">攜帶親友<span class="req">*</span></label>
-          <select id="s-family" onchange="updateProgress()">
+          <select id="s-family" onchange="renderFamilyBlocks();updateProgress()">
             <option value="">請填寫不含自己另外攜帶的人數</option>
             <option value="0">0 人</option>
             <option value="1">1 人</option>
@@ -843,6 +843,7 @@
             <option value="5">5 人</option>
           </select>
         </div>
+        <div id="familyWrap"></div>
         <div class="field">
           <label>參與漆彈<span class="req">*</span></label>
           <div class="radio-list">
@@ -899,9 +900,12 @@
         <div class="result-row"><span class="result-key">身分證字號</span><span class="result-val" id="r-id"></span></div>
         <div class="result-row"><span class="result-key">手機號碼</span><span class="result-val" id="r-phone"></span></div>
         <div class="result-row"><span class="result-key">職別</span><span class="result-val" id="r-role"></span></div>
-        <div class="result-row"><span class="result-key">自費金額</span><span class="result-val" id="r-fee"></span></div>
+        <div class="result-row"><span class="result-key">員工自費金額</span><span class="result-val" id="r-fee"></span></div>
         <div class="result-row"><span class="result-key">搭車地點</span><span class="result-val" id="r-pickup"></span></div>
         <div class="result-row"><span class="result-key">攜帶親友</span><span class="result-val" id="r-family"></span></div>
+        <div id="famResults"></div>
+        <div class="result-row"><span class="result-key">親友費用小計</span><span class="result-val" id="r-famfee"></span></div>
+        <div class="result-row"><span class="result-key">自費總計（含親友）</span><span class="result-val" id="r-total" style="color:var(--red);font-weight:700;"></span></div>
         <div class="result-row"><span class="result-key">參與漆彈</span><span class="result-val" id="r-paintball"></span></div>
         <div class="result-row"><span class="result-key">飲食習慣</span><span class="result-val" id="r-diet"></span></div>
         <div class="result-row"><span class="result-key">備註</span><span class="result-val" id="r-memo"></span></div>
@@ -935,21 +939,93 @@ function selectRadio(name, id) {
 }
 
 // ── PROGRESS ──
+// ── 親友動態欄位與費用 ──
+var TRIP_DATE = new Date('2026-09-14T00:00:00+08:00');
+function famFee(birth) {
+  if (!birth) return null;
+  var b = new Date(birth);
+  if (isNaN(b)) return null;
+  var age = TRIP_DATE.getFullYear() - b.getFullYear();
+  var m = TRIP_DATE.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && TRIP_DATE.getDate() < b.getDate())) age--;
+  if (age <= 3) return 0;
+  if (age <= 12) return 2000;
+  return 5000;
+}
+function feeText(n) { return n === 0 ? '免費' : '$' + n.toLocaleString() + '元'; }
+function escHtml(t) {
+  return String(t).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function renderFamilyBlocks() {
+  var n = parseInt(document.getElementById('s-family').value || '0', 10) || 0;
+  var wrap = document.getElementById('familyWrap');
+  var keep = [];
+  for (var i = 1; i <= 5; i++) {
+    var ne = document.getElementById('f' + i + '-name');
+    if (ne) keep[i] = {
+      name: ne.value,
+      birth: document.getElementById('f' + i + '-birth').value,
+      id: document.getElementById('f' + i + '-id').value
+    };
+  }
+  var html = '';
+  for (var i = 1; i <= n; i++) {
+    html += '<div style="border:0.5px solid var(--divider);border-radius:10px;padding:12px 14px;margin-bottom:1rem;background:var(--surface);">'
+      + '<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px;">👥 親友 ' + i + '<span style="font-weight:400;color:var(--ink-3);font-size:12px;">（投保旅平險用，請務必正確填寫）</span></div>'
+      + '<div class="field"><label for="f' + i + '-name">姓名<span class="req">*</span></label>'
+      + '<input type="text" id="f' + i + '-name" placeholder="親友真實姓名" oninput="updateProgress()"></div>'
+      + '<div class="field"><label for="f' + i + '-birth">出生年月日<span class="req">*</span></label>'
+      + '<input type="date" id="f' + i + '-birth" onchange="famFeeNote(' + i + ');updateProgress()"></div>'
+      + '<div class="field" style="margin-bottom:4px;"><label for="f' + i + '-id">身分證字號<span class="req">*</span></label>'
+      + '<input type="text" id="f' + i + '-id" placeholder="例如 A123456789" maxlength="10" oninput="updateProgress()"></div>'
+      + '<p class="help-note" id="f' + i + '-feenote" style="margin:6px 0 0;color:var(--amber);"></p>'
+      + '</div>';
+  }
+  wrap.innerHTML = html;
+  for (var i = 1; i <= n; i++) {
+    if (keep[i]) {
+      document.getElementById('f' + i + '-name').value  = keep[i].name;
+      document.getElementById('f' + i + '-birth').value = keep[i].birth;
+      document.getElementById('f' + i + '-id').value    = keep[i].id;
+      famFeeNote(i);
+    }
+  }
+}
+function famFeeNote(i) {
+  var el = document.getElementById('f' + i + '-feenote');
+  if (!el) return;
+  var fee = famFee(document.getElementById('f' + i + '-birth').value);
+  el.textContent = fee === null ? '' : '此位親友費用：' + feeText(fee) + '（依出遊日 2026/9/14 年齡自動計算）';
+}
+
+// ── PROGRESS（含親友欄位）──
 function updateProgress() {
   var fields = [
     document.getElementById('s-unit').value !== '',
     document.getElementById('s-store').value.trim() !== '',
     document.getElementById('s-name').value.trim() !== '',
-    document.getElementById('s-role').value !== '',
     document.getElementById('s-birth').value !== '',
     document.getElementById('s-id').value.trim() !== '',
     document.getElementById('s-phone').value.trim() !== '',
-    document.getElementById('s-pickup').value.trim() !== '',
+    document.getElementById('s-role').value !== '',
+    document.getElementById('s-fee').value !== '',
+    document.getElementById('s-pickup').value !== '',
     document.getElementById('s-family').value !== '',
     document.querySelector('input[name="paintball"]:checked') !== null,
-    document.getElementById('s-fee').value !== '',
     document.querySelector('input[name="diet"]:checked') !== null
   ];
+  var n = parseInt(document.getElementById('s-family').value || '0', 10) || 0;
+  for (var i = 1; i <= n; i++) {
+    var ne = document.getElementById('f' + i + '-name');
+    var be = document.getElementById('f' + i + '-birth');
+    var ie = document.getElementById('f' + i + '-id');
+    fields.push(!!(ne && ne.value.trim() !== ''));
+    fields.push(!!(be && be.value !== ''));
+    fields.push(!!(ie && ie.value.trim() !== ''));
+  }
   var total = fields.length;
   var done = fields.filter(Boolean).length;
   var pct = Math.round((done / total) * 100);
@@ -972,7 +1048,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
   var birth     = document.getElementById('s-birth').value;
   var pid       = document.getElementById('s-id').value.trim();
   var phone     = document.getElementById('s-phone').value.trim();
-  var pickup    = document.getElementById('s-pickup').value.trim();
+  var pickup    = document.getElementById('s-pickup').value;
   var family    = document.getElementById('s-family').value;
   var paintball = document.querySelector('input[name="paintball"]:checked');
   var fee       = document.getElementById('s-fee').value;
@@ -990,7 +1066,26 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
+
+  var n = parseInt(family, 10) || 0;
+  var fam = [];
+  for (var i = 1; i <= n; i++) {
+    var fn  = (document.getElementById('f' + i + '-name')  || {value:''}).value.trim();
+    var fb  = (document.getElementById('f' + i + '-birth') || {value:''}).value;
+    var fid = (document.getElementById('f' + i + '-id')    || {value:''}).value.trim();
+    if (!fn || !fb || !fid) {
+      errMsg.textContent = '請完成「親友 ' + i + '」的姓名、出生年月日、身分證字號（投保必填）';
+      errMsg.classList.add('show');
+      errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    fam.push({ name: fn, birth: fb, id: fid, fee: famFee(fb) });
+  }
   errMsg.classList.remove('show');
+
+  var feeSelf  = parseInt(fee.replace(/[^0-9]/g, ''), 10) || 0;
+  var feeFam   = fam.reduce(function(sum, f) { return sum + (f.fee || 0); }, 0);
+  var feeTotal = feeSelf + feeFam;
 
   var memo = document.getElementById('s-memo').value.trim() || '無';
   var btn  = document.querySelector('.btn-submit');
@@ -998,20 +1093,18 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
   btn.textContent = '送出中…';
 
   var payload = {
-    unit:      unit,
-    store:     store,
-    name:      name,
-    role:      role,
-    birth:     birth,
-    id:        pid,
-    phone:     phone,
-    pickup:    pickup,
-    family:    family,
-    paintball: paintball.value,
-    fee:       fee,
-    diet:      diet.value,
-    memo:      memo
+    unit: unit, store: store, name: name, role: role, birth: birth,
+    id: pid, phone: phone, pickup: pickup, family: family,
+    paintball: paintball.value, fee: fee, diet: diet.value, memo: memo,
+    familyFee: feeFam, totalFee: feeTotal
   };
+  for (var i = 0; i < 5; i++) {
+    var f = fam[i] || { name: '', birth: '', id: '', fee: '' };
+    payload['f' + (i + 1) + 'name']  = f.name;
+    payload['f' + (i + 1) + 'birth'] = f.birth;
+    payload['f' + (i + 1) + 'id']    = f.id;
+    payload['f' + (i + 1) + 'fee']   = f.fee;
+  }
 
   fetch(APPS_SCRIPT_URL, {
     method: 'POST',
@@ -1034,6 +1127,14 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     document.getElementById('r-fee').textContent       = fee;
     document.getElementById('r-diet').textContent      = diet.value;
     document.getElementById('r-memo').textContent      = memo;
+    var fr = '';
+    fam.forEach(function(f, idx) {
+      fr += '<div class="result-row"><span class="result-key">親友 ' + (idx + 1) + '</span><span class="result-val">'
+          + escHtml(f.name) + '｜' + escHtml(f.birth) + '｜' + escHtml(f.id) + '｜' + feeText(f.fee) + '</span></div>';
+    });
+    document.getElementById('famResults').innerHTML = fr;
+    document.getElementById('r-famfee').textContent = '$' + feeFam.toLocaleString() + '元';
+    document.getElementById('r-total').textContent  = '$' + feeTotal.toLocaleString() + '元';
     document.getElementById('surveyForm').style.display = 'none';
     var rw = document.getElementById('resultWrap');
     rw.classList.add('visible');
@@ -1069,6 +1170,16 @@ function prefillFromSaved() {
     });
   });
   if (d.memo && d.memo !== '無') document.getElementById('s-memo').value = d.memo;
+  renderFamilyBlocks();
+  var n = parseInt(d.family || '0', 10) || 0;
+  for (var i = 1; i <= n; i++) {
+    if (document.getElementById('f' + i + '-name')) {
+      document.getElementById('f' + i + '-name').value  = d['f' + i + 'name']  || '';
+      document.getElementById('f' + i + '-birth').value = d['f' + i + 'birth'] || '';
+      document.getElementById('f' + i + '-id').value    = d['f' + i + 'id']    || '';
+      famFeeNote(i);
+    }
+  }
   updateProgress();
   return true;
 }
