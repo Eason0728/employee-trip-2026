@@ -948,8 +948,8 @@ function famFee(birth) {
   var age = TRIP_DATE.getFullYear() - b.getFullYear();
   var m = TRIP_DATE.getMonth() - b.getMonth();
   if (m < 0 || (m === 0 && TRIP_DATE.getDate() < b.getDate())) age--;
-  if (age <= 3) return 0;
-  if (age <= 12) return 2000;
+  if (age < 3) return 0;    // 未滿3歲免費
+  if (age < 12) return 2000; // 未滿12歲 $2,000；滿12歲起 $5,000
   return 5000;
 }
 function feeText(n) { return n === 0 ? '免費' : '$' + n.toLocaleString() + '元'; }
