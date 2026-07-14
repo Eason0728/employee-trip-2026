@@ -744,7 +744,16 @@
 
       <div style="background:var(--surface);border:0.5px solid var(--divider);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--ink-2);line-height:1.7;margin-bottom:1.25rem;">
         📋 填寫完畢會自動記錄至報名表，請確認後送出。<br>
+        ✏️ 送出後如需修改，請用原本填寫的裝置重新開啟本頁，修改後再次送出（以最新一筆為準）。<br>
+        ⏰ 截止日 7/23（四）之後將關閉填寫。<br>
         ⚠️ <strong style="color:var(--red);">報名送出後，如取消參加則費用不退還。</strong>
+      </div>
+
+      <div class="note-box" id="savedNotice" style="display:none;margin-top:0;margin-bottom:1.25rem;">
+        <strong>💾 已載入上次填寫的資料</strong>可直接修改，改完按「送出報名」再次送出，以最新一筆為準。
+      </div>
+      <div class="note-box" id="closedNotice" style="display:none;margin-top:0;margin-bottom:1.25rem;">
+        <strong>⏰ 報名已截止</strong>報名登記已於 7/23（四）截止，如需協助請洽總部。
       </div>
 
       <div class="progress-bar-wrap">
@@ -771,7 +780,7 @@
         </div>
         <div class="field">
           <label for="s-store">店別<span class="req">*</span></label>
-          <input type="text" id="s-store" placeholder="請填寫所屬店別（分店 / 品牌）" oninput="updateProgress()">
+          <input type="text" id="s-store" placeholder="請填寫所屬店別（分店 / 總部）" oninput="updateProgress()">
         </div>
         <div class="field">
           <label for="s-name">姓名<span class="req">*</span></label>
@@ -896,6 +905,7 @@
         <div class="result-row"><span class="result-key">參與漆彈</span><span class="result-val" id="r-paintball"></span></div>
         <div class="result-row"><span class="result-key">飲食習慣</span><span class="result-val" id="r-diet"></span></div>
         <div class="result-row"><span class="result-key">備註</span><span class="result-val" id="r-memo"></span></div>
+        <button type="button" id="editAgainBtn" class="btn-submit" style="margin-top:1.25rem;">✏️ 修改資料，重新送出</button>
       </div>
 
     </div>
@@ -969,6 +979,11 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
   var diet      = document.querySelector('input[name="diet"]:checked');
   var errMsg    = document.getElementById('errorMsg');
 
+  if (new Date() >= SIGNUP_DEADLINE) {
+    errMsg.textContent = '報名已截止，無法送出';
+    errMsg.classList.add('show');
+    return;
+  }
   if (!unit || !store || !name || !role || !birth || !pid || !phone || !pickup || !family || !paintball || !fee || !diet) {
     errMsg.textContent = '請完成所有必填項目（標示 * 的欄位）';
     errMsg.classList.add('show');
@@ -1005,6 +1020,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     body: JSON.stringify(payload)
   })
   .then(function() {
+    try { localStorage.setItem(SIGNUP_KEY, JSON.stringify(payload)); } catch (e2) {}
     document.getElementById('r-unit').textContent      = unit;
     document.getElementById('r-store').textContent     = store;
     document.getElementById('r-name').textContent      = name;
@@ -1029,6 +1045,56 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     errMsg.textContent = '送出失敗，請稍後再試';
     errMsg.classList.add('show');
   });
+});
+
+// ── 已填資料記憶、修改、截止日 ──
+var SIGNUP_KEY = 'malaTrip2026Signup';
+var SIGNUP_DEADLINE = new Date('2026-07-24T00:00:00+08:00'); // 7/23（四）整天可填，7/24 起關閉
+var submitBtnHTML = document.querySelector('.btn-submit').innerHTML;
+
+function prefillFromSaved() {
+  var raw = null;
+  try { raw = localStorage.getItem(SIGNUP_KEY); } catch (e) {}
+  if (!raw) return false;
+  var d;
+  try { d = JSON.parse(raw); } catch (e) { return false; }
+  ['unit','store','name','birth','id','phone','role','fee','pickup','family'].forEach(function(k) {
+    var el = document.getElementById('s-' + k);
+    if (el && d[k]) el.value = d[k];
+  });
+  ['paintball','diet'].forEach(function(name) {
+    if (!d[name]) return;
+    document.querySelectorAll('input[name="' + name + '"]').forEach(function(r) {
+      if (r.value === d[name]) { r.checked = true; r.closest('.radio-item').classList.add('selected'); }
+    });
+  });
+  if (d.memo && d.memo !== '無') document.getElementById('s-memo').value = d.memo;
+  updateProgress();
+  return true;
+}
+
+if (new Date() >= SIGNUP_DEADLINE) {
+  document.getElementById('surveyForm').style.display = 'none';
+  document.querySelector('.progress-bar-wrap').style.display = 'none';
+  document.getElementById('closedNotice').style.display = 'block';
+} else if (prefillFromSaved()) {
+  document.getElementById('savedNotice').style.display = 'block';
+}
+
+document.getElementById('editAgainBtn').addEventListener('click', function() {
+  document.getElementById('resultWrap').classList.remove('visible');
+  if (new Date() >= SIGNUP_DEADLINE) {
+    document.getElementById('closedNotice').style.display = 'block';
+    return;
+  }
+  var f = document.getElementById('surveyForm');
+  f.style.display = '';
+  var btn = document.querySelector('.btn-submit');
+  btn.disabled = false;
+  btn.innerHTML = submitBtnHTML;
+  document.getElementById('savedNotice').style.display = 'block';
+  updateProgress();
+  f.scrollIntoView({ behavior: 'smooth' });
 });
 </script>
 
