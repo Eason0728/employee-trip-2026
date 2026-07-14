@@ -771,19 +771,11 @@
         </div>
         <div class="field">
           <label for="s-store">店別<span class="req">*</span></label>
-          <input type="text" id="s-store" placeholder="請填寫所屬店別（分店 / 據點）" oninput="updateProgress()">
+          <input type="text" id="s-store" placeholder="請填寫所屬店別（分店 / 品牌）" oninput="updateProgress()">
         </div>
         <div class="field">
           <label for="s-name">姓名<span class="req">*</span></label>
           <input type="text" id="s-name" placeholder="請輸入真實姓名" oninput="updateProgress()">
-        </div>
-        <div class="field">
-          <label for="s-role">職別<span class="req">*</span></label>
-          <select id="s-role" onchange="updateProgress()">
-            <option value="">— 請選擇 —</option>
-            <option value="正職">正職</option>
-            <option value="計時">計時</option>
-          </select>
         </div>
         <div class="field">
           <label for="s-birth">出生年月日<span class="req">*</span></label>
@@ -798,12 +790,37 @@
           <label for="s-phone">手機號碼<span class="req">*</span></label>
           <input type="tel" id="s-phone" placeholder="例如 0912345678" maxlength="10" oninput="updateProgress()">
         </div>
+        <div class="field">
+          <label for="s-role">職別<span class="req">*</span></label>
+          <select id="s-role" onchange="updateProgress()">
+            <option value="">— 請選擇 —</option>
+            <option value="正職">正職</option>
+            <option value="計時">計時</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="s-fee">自費金額<span class="req">*</span></label>
+          <p class="help-note">請參照旅遊介紹分頁中的「費用方案一覽」表中的條件</p>
+          <select id="s-fee" onchange="updateProgress()">
+            <option value="">— 請選擇 —</option>
+            <option value="$0元（免費）">$0元（免費）</option>
+            <option value="$1,000元">$1,000元</option>
+            <option value="$2,000元">$2,000元</option>
+            <option value="$3,000元">$3,000元</option>
+            <option value="$4,000元">$4,000元</option>
+          </select>
+        </div>
 
         <div class="section-label">交通與參與</div>
         <div class="field">
           <label for="s-pickup">搭車地點<span class="req">*</span></label>
-          <p class="help-note">本次一律搭乘公司專車，請填寫希望的上車地點</p>
-          <input type="text" id="s-pickup" placeholder="例如：公司門口 / 竹北站 / 台中站…" oninput="updateProgress()">
+          <p class="help-note">本次一律搭乘公司專車，請選擇上車地點</p>
+          <select id="s-pickup" onchange="updateProgress()">
+            <option value="">— 請選擇 —</option>
+            <option value="台中">台中</option>
+            <option value="新竹">新竹</option>
+            <option value="台北">台北</option>
+          </select>
         </div>
         <div class="field">
           <label for="s-family">攜帶親友<span class="req">*</span></label>
@@ -829,18 +846,6 @@
               <span>不玩漆彈，改玩其他加購活動</span>
             </label>
           </div>
-        </div>
-        <div class="field">
-          <label for="s-fee">自費金額<span class="req">*</span></label>
-          <p class="help-note">請對照上方「費用方案一覽」選擇你的自費金額</p>
-          <select id="s-fee" onchange="updateProgress()">
-            <option value="">— 請選擇 —</option>
-            <option value="$0元（免費）">$0元（免費）</option>
-            <option value="$1,000元">$1,000元</option>
-            <option value="$2,000元">$2,000元</option>
-            <option value="$3,000元">$3,000元</option>
-            <option value="$4,000元">$4,000元</option>
-          </select>
         </div>
 
         <div class="section-label">餐飲與備註</div>
@@ -881,14 +886,14 @@
         <div class="result-row"><span class="result-key">單位</span><span class="result-val" id="r-unit"></span></div>
         <div class="result-row"><span class="result-key">店別</span><span class="result-val" id="r-store"></span></div>
         <div class="result-row"><span class="result-key">姓名</span><span class="result-val" id="r-name"></span></div>
-        <div class="result-row"><span class="result-key">職別</span><span class="result-val" id="r-role"></span></div>
         <div class="result-row"><span class="result-key">出生年月日</span><span class="result-val" id="r-birth"></span></div>
         <div class="result-row"><span class="result-key">身分證字號</span><span class="result-val" id="r-id"></span></div>
         <div class="result-row"><span class="result-key">手機號碼</span><span class="result-val" id="r-phone"></span></div>
+        <div class="result-row"><span class="result-key">職別</span><span class="result-val" id="r-role"></span></div>
+        <div class="result-row"><span class="result-key">自費金額</span><span class="result-val" id="r-fee"></span></div>
         <div class="result-row"><span class="result-key">搭車地點</span><span class="result-val" id="r-pickup"></span></div>
         <div class="result-row"><span class="result-key">攜帶親友</span><span class="result-val" id="r-family"></span></div>
         <div class="result-row"><span class="result-key">參與漆彈</span><span class="result-val" id="r-paintball"></span></div>
-        <div class="result-row"><span class="result-key">自費金額</span><span class="result-val" id="r-fee"></span></div>
         <div class="result-row"><span class="result-key">飲食習慣</span><span class="result-val" id="r-diet"></span></div>
         <div class="result-row"><span class="result-key">備註</span><span class="result-val" id="r-memo"></span></div>
       </div>
