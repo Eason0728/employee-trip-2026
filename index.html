@@ -251,13 +251,13 @@
   .field { margin-bottom: 1.25rem; }
   .field > label { display: block; font-size: 13px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
   .req { color: var(--red); margin-left: 2px; }
-  input[type="text"], select {
+  input[type="text"], input[type="date"], input[type="tel"], input[type="number"], select {
     width: 100%; padding: 10px 12px; font-size: 14px; font-family: var(--sans);
     border: 0.5px solid var(--divider); border-radius: 8px; background: #fff;
     color: var(--ink); outline: none; transition: border-color 0.15s;
     -webkit-appearance: none;
   }
-  input[type="text"]:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,95,165,0.08); }
+  input[type="text"]:focus, input[type="date"]:focus, input[type="tel"]:focus, input[type="number"]:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,95,165,0.08); }
 
   .radio-list { display: flex; flex-direction: column; gap: 6px; }
   .radio-item {
@@ -360,7 +360,7 @@
       <span class="tab-icon">🌙</span>第二天
     </button>
     <button class="tab-btn" onclick="switchTab(3)" role="tab">
-      <span class="tab-icon">📝</span>意願調查
+      <span class="tab-icon">📝</span>報名登記
     </button>
   </nav>
 </div>
@@ -736,16 +736,21 @@
     <div class="card-header">
       <span class="card-header-icon">📝</span>
       <div class="card-header-text">
-        <h2>意願調查問卷</h2>
-        <p>填寫完畢後會自動記錄至報名表，請確認後送出</p>
+        <h2>報名登記表</h2>
+        <p>請確實填寫以下資料，送出後即完成報名</p>
       </div>
     </div>
     <div class="card-body">
 
+      <div style="background:var(--surface);border:0.5px solid var(--divider);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--ink-2);line-height:1.7;margin-bottom:1.25rem;">
+        📋 填寫完畢會自動記錄至報名表，請確認後送出。<br>
+        ⚠️ <strong style="color:var(--red);">報名送出後，如取消參加則費用不退還。</strong>
+      </div>
+
       <div class="progress-bar-wrap">
         <div class="progress-meta">
           <span id="progressLabel">尚未開始填寫</span>
-          <span id="progressPct">0 / 6</span>
+          <span id="progressPct">0 / 12</span>
         </div>
         <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
       </div>
@@ -765,21 +770,45 @@
           </select>
         </div>
         <div class="field">
+          <label for="s-store">店別<span class="req">*</span></label>
+          <input type="text" id="s-store" placeholder="請填寫所屬店別（分店 / 據點）" oninput="updateProgress()">
+        </div>
+        <div class="field">
           <label for="s-name">姓名<span class="req">*</span></label>
           <input type="text" id="s-name" placeholder="請輸入真實姓名" oninput="updateProgress()">
         </div>
         <div class="field">
-          <label for="s-identity">職稱<span class="req">*</span></label>
-          <select id="s-identity" onchange="updateProgress()">
+          <label for="s-role">職別<span class="req">*</span></label>
+          <select id="s-role" onchange="updateProgress()">
             <option value="">— 請選擇 —</option>
             <option value="正職">正職</option>
             <option value="計時">計時</option>
           </select>
         </div>
         <div class="field">
-          <label for="s-family">親友<span class="req">*</span></label>
+          <label for="s-birth">出生年月日<span class="req">*</span></label>
+          <input type="date" id="s-birth" onchange="updateProgress()">
+        </div>
+        <div class="field">
+          <label for="s-id">身分證字號<span class="req">*</span></label>
+          <p class="help-note">投保旅遊平安險用，請務必正確填寫</p>
+          <input type="text" id="s-id" placeholder="例如 A123456789" maxlength="10" oninput="updateProgress()">
+        </div>
+        <div class="field">
+          <label for="s-phone">手機號碼<span class="req">*</span></label>
+          <input type="tel" id="s-phone" placeholder="例如 0912345678" maxlength="10" oninput="updateProgress()">
+        </div>
+
+        <div class="section-label">交通與參與</div>
+        <div class="field">
+          <label for="s-pickup">搭車地點<span class="req">*</span></label>
+          <p class="help-note">本次一律搭乘公司專車，請填寫希望的上車地點</p>
+          <input type="text" id="s-pickup" placeholder="例如：公司門口 / 竹北站 / 台中站…" oninput="updateProgress()">
+        </div>
+        <div class="field">
+          <label for="s-family">攜帶親友<span class="req">*</span></label>
           <select id="s-family" onchange="updateProgress()">
-            <option value="">請填寫不含自己要另外攜帶的人數</option>
+            <option value="">請填寫不含自己另外攜帶的人數</option>
             <option value="0">0 人</option>
             <option value="1">1 人</option>
             <option value="2">2 人</option>
@@ -788,38 +817,30 @@
             <option value="5">5 人</option>
           </select>
         </div>
-
-        <div class="section-label">參與意願與交通</div>
         <div class="field">
-          <label>參與意願<span class="req">*</span></label>
+          <label>參與漆彈<span class="req">*</span></label>
           <div class="radio-list">
-            <label class="radio-item" onclick="selectRadio('will','go')">
-              <input type="radio" name="will" value="我要 +1！準時熱血出發！" id="will-go" onchange="updateProgress()">
-              <span>我要 +1！準時熱血出發！</span>
+            <label class="radio-item" onclick="selectRadio('paintball','yes')">
+              <input type="radio" name="paintball" value="參加漆彈對戰" id="paintball-yes" onchange="updateProgress()">
+              <span>參加，熱血開打！</span>
             </label>
-            <label class="radio-item" onclick="selectRadio('will','no')">
-              <input type="radio" name="will" value="殘念不克前往，祝大家玩得開心" id="will-no" onchange="updateProgress()">
-              <span>殘念不克前往，祝大家玩得開心</span>
+            <label class="radio-item" onclick="selectRadio('paintball','no')">
+              <input type="radio" name="paintball" value="不參加，改玩其他加購活動" id="paintball-no" onchange="updateProgress()">
+              <span>不玩漆彈，改玩其他加購活動</span>
             </label>
           </div>
         </div>
         <div class="field">
-          <label>交通方式<span class="req">*</span></label>
-          <p class="help-note">選擇「自行前往」的夥伴，公司另外補助交通費</p>
-          <div class="radio-list">
-            <label class="radio-item" onclick="selectRadio('transport','bus')">
-              <input type="radio" name="transport" value="搭乘公司團體專車（定點上下車）" id="transport-bus" onchange="updateProgress()">
-              <span>搭乘公司團體專車（定點上下車，免煩惱）</span>
-            </label>
-            <label class="radio-item" onclick="selectRadio('transport','self')">
-              <input type="radio" name="transport" value="自行前往（開車/騎車/大眾運輸，領取交通補助）" id="transport-self" onchange="updateProgress()">
-              <span>自行前往（開車 / 騎車 / 大眾運輸，領取交通補助）</span>
-            </label>
-            <label class="radio-item" onclick="selectRadio('transport','na')">
-              <input type="radio" name="transport" value="無法參加，不適用" id="transport-na" onchange="updateProgress()">
-              <span>無法參加，不適用</span>
-            </label>
-          </div>
+          <label for="s-fee">自費金額<span class="req">*</span></label>
+          <p class="help-note">請對照上方「費用方案一覽」選擇你的自費金額</p>
+          <select id="s-fee" onchange="updateProgress()">
+            <option value="">— 請選擇 —</option>
+            <option value="$0元（免費）">$0元（免費）</option>
+            <option value="$1,000元">$1,000元</option>
+            <option value="$2,000元">$2,000元</option>
+            <option value="$3,000元">$3,000元</option>
+            <option value="$4,000元">$4,000元</option>
+          </select>
         </div>
 
         <div class="section-label">餐飲與備註</div>
@@ -842,27 +863,32 @@
         </div>
         <div class="field">
           <label for="s-memo">其他想說的話或特殊需求</label>
-          <input type="text" id="s-memo" placeholder="例如：交通需求、飲食細節…">
+          <input type="text" id="s-memo" placeholder="例如：搭車需求、飲食細節…">
         </div>
 
         <p class="error-msg" id="errorMsg">請完成所有必填項目（標示 * 的欄位）</p>
         <button type="submit" class="btn-submit">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          送出問卷
+          送出報名
         </button>
       </form>
 
       <div class="result-wrap" id="resultWrap">
         <div class="result-success">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          問卷已送出！以下是您的填寫記錄
+          報名已送出！以下是您的登記資料
         </div>
         <div class="result-row"><span class="result-key">單位</span><span class="result-val" id="r-unit"></span></div>
+        <div class="result-row"><span class="result-key">店別</span><span class="result-val" id="r-store"></span></div>
         <div class="result-row"><span class="result-key">姓名</span><span class="result-val" id="r-name"></span></div>
-        <div class="result-row"><span class="result-key">職稱</span><span class="result-val" id="r-identity"></span></div>
-        <div class="result-row"><span class="result-key">親友人數</span><span class="result-val" id="r-family"></span></div>
-        <div class="result-row"><span class="result-key">參與意願</span><span class="result-val" id="r-will"></span></div>
-        <div class="result-row"><span class="result-key">交通方式</span><span class="result-val" id="r-transport"></span></div>
+        <div class="result-row"><span class="result-key">職別</span><span class="result-val" id="r-role"></span></div>
+        <div class="result-row"><span class="result-key">出生年月日</span><span class="result-val" id="r-birth"></span></div>
+        <div class="result-row"><span class="result-key">身分證字號</span><span class="result-val" id="r-id"></span></div>
+        <div class="result-row"><span class="result-key">手機號碼</span><span class="result-val" id="r-phone"></span></div>
+        <div class="result-row"><span class="result-key">搭車地點</span><span class="result-val" id="r-pickup"></span></div>
+        <div class="result-row"><span class="result-key">攜帶親友</span><span class="result-val" id="r-family"></span></div>
+        <div class="result-row"><span class="result-key">參與漆彈</span><span class="result-val" id="r-paintball"></span></div>
+        <div class="result-row"><span class="result-key">自費金額</span><span class="result-val" id="r-fee"></span></div>
         <div class="result-row"><span class="result-key">飲食習慣</span><span class="result-val" id="r-diet"></span></div>
         <div class="result-row"><span class="result-key">備註</span><span class="result-val" id="r-memo"></span></div>
       </div>
@@ -897,21 +923,26 @@ function selectRadio(name, id) {
 function updateProgress() {
   var fields = [
     document.getElementById('s-unit').value !== '',
+    document.getElementById('s-store').value.trim() !== '',
     document.getElementById('s-name').value.trim() !== '',
-    document.getElementById('s-identity').value !== '',
+    document.getElementById('s-role').value !== '',
+    document.getElementById('s-birth').value !== '',
+    document.getElementById('s-id').value.trim() !== '',
+    document.getElementById('s-phone').value.trim() !== '',
+    document.getElementById('s-pickup').value.trim() !== '',
     document.getElementById('s-family').value !== '',
-    document.querySelector('input[name="will"]:checked') !== null,
-    document.querySelector('input[name="transport"]:checked') !== null,
+    document.querySelector('input[name="paintball"]:checked') !== null,
+    document.getElementById('s-fee').value !== '',
     document.querySelector('input[name="diet"]:checked') !== null
   ];
+  var total = fields.length;
   var done = fields.filter(Boolean).length;
-  var pct = Math.round((done / 7) * 100);
+  var pct = Math.round((done / total) * 100);
   document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressPct').textContent = done + ' / 7';
-  var labels = ['尚未開始填寫','已填 1 項','已填 2 項','已填 3 項','已填 4 項','已填 5 項','還差一步了！','全部完成 ✓'];
+  document.getElementById('progressPct').textContent = done + ' / ' + total;
   var lbl = document.getElementById('progressLabel');
-  lbl.textContent = labels[done];
-  lbl.style.color = done === 7 ? '#1c7a49' : '#8e8e93';
+  lbl.textContent = done === 0 ? '尚未開始填寫' : (done === total ? '全部完成 ✓' : '已填 ' + done + ' 項');
+  lbl.style.color = done === total ? '#1c7a49' : '#8e8e93';
 }
 
 // ── SUBMIT → Google Sheets via Apps Script ──
@@ -919,16 +950,22 @@ var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzuHkSc1GTTJQEuBd
 
 document.getElementById('surveyForm').addEventListener('submit', function(e) {
   e.preventDefault();
-  var unit     = document.getElementById('s-unit').value;
-  var name     = document.getElementById('s-name').value.trim();
-  var identity = document.getElementById('s-identity').value;
-  var family   = document.getElementById('s-family').value;
-  var will     = document.querySelector('input[name="will"]:checked');
-  var transport= document.querySelector('input[name="transport"]:checked');
-  var diet     = document.querySelector('input[name="diet"]:checked');
-  var errMsg   = document.getElementById('errorMsg');
+  var unit      = document.getElementById('s-unit').value;
+  var store     = document.getElementById('s-store').value.trim();
+  var name      = document.getElementById('s-name').value.trim();
+  var role      = document.getElementById('s-role').value;
+  var birth     = document.getElementById('s-birth').value;
+  var pid       = document.getElementById('s-id').value.trim();
+  var phone     = document.getElementById('s-phone').value.trim();
+  var pickup    = document.getElementById('s-pickup').value.trim();
+  var family    = document.getElementById('s-family').value;
+  var paintball = document.querySelector('input[name="paintball"]:checked');
+  var fee       = document.getElementById('s-fee').value;
+  var diet      = document.querySelector('input[name="diet"]:checked');
+  var errMsg    = document.getElementById('errorMsg');
 
-  if (!unit || !name || !identity || !family || !will || !transport || !diet) {
+  if (!unit || !store || !name || !role || !birth || !pid || !phone || !pickup || !family || !paintball || !fee || !diet) {
+    errMsg.textContent = '請完成所有必填項目（標示 * 的欄位）';
     errMsg.classList.add('show');
     errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
@@ -942,11 +979,16 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
 
   var payload = {
     unit:      unit,
+    store:     store,
     name:      name,
-    identity:  identity,
+    role:      role,
+    birth:     birth,
+    id:        pid,
+    phone:     phone,
+    pickup:    pickup,
     family:    family,
-    will:      will.value,
-    transport: transport.value,
+    paintball: paintball.value,
+    fee:       fee,
     diet:      diet.value,
     memo:      memo
   };
@@ -959,11 +1001,16 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
   })
   .then(function() {
     document.getElementById('r-unit').textContent      = unit;
+    document.getElementById('r-store').textContent     = store;
     document.getElementById('r-name').textContent      = name;
-    document.getElementById('r-identity').textContent  = identity;
+    document.getElementById('r-role').textContent      = role;
+    document.getElementById('r-birth').textContent     = birth;
+    document.getElementById('r-id').textContent        = pid;
+    document.getElementById('r-phone').textContent     = phone;
+    document.getElementById('r-pickup').textContent    = pickup;
     document.getElementById('r-family').textContent    = family + ' 人';
-    document.getElementById('r-will').textContent      = will.value;
-    document.getElementById('r-transport').textContent = transport.value;
+    document.getElementById('r-paintball').textContent = paintball.value;
+    document.getElementById('r-fee').textContent       = fee;
     document.getElementById('r-diet').textContent      = diet.value;
     document.getElementById('r-memo').textContent      = memo;
     document.getElementById('surveyForm').style.display = 'none';
@@ -973,7 +1020,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
   })
   .catch(function() {
     btn.disabled = false;
-    btn.textContent = '送出問卷';
+    btn.textContent = '送出報名';
     errMsg.textContent = '送出失敗，請稍後再試';
     errMsg.classList.add('show');
   });
