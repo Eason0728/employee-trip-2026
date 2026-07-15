@@ -794,7 +794,7 @@
         </div>
         <div class="field">
           <label for="s-id">身分證字號<span class="req">*</span></label>
-          <p class="help-note">投保旅遊平安險用，請務必正確填寫</p>
+          <p class="help-note">投保旅遊平安險用，請務必正確填寫；外籍夥伴請填居留證統一證號</p>
           <input type="text" id="s-id" placeholder="例如 A123456789" maxlength="10" oninput="updateProgress()">
         </div>
         <div class="field">
@@ -1030,6 +1030,7 @@ function renderFamilyBlocks() {
       + '<div class="field"><label for="f' + i + '-birth">出生年月日<span class="req">*</span></label>'
       + '<input type="date" id="f' + i + '-birth" onchange="famFeeNote(' + i + ');famPbGate(' + i + ');updateProgress()"></div>'
       + '<div class="field"><label for="f' + i + '-id">身分證字號<span class="req">*</span></label>'
+      + '<p class="help-note">外籍夥伴請填居留證統一證號</p>'
       + '<input type="text" id="f' + i + '-id" placeholder="例如 A123456789" maxlength="10" oninput="updateProgress()"></div>'
       + '<div class="field" style="margin-bottom:4px;"><label for="f' + i + '-addr">地址<span class="req">*</span></label>'
       + '<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2);margin-bottom:6px;cursor:pointer;">'
