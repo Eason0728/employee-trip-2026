@@ -666,7 +666,7 @@
         <div class="info-item"><strong>地址</strong>桃園市大溪區康莊路三段 425-1 號</div>
         <div class="info-item"><strong>電話</strong>(03) 388-8855</div>
         <div class="info-item"><strong>行動預約</strong>0935-255-072</div>
-        <div class="info-item"><strong>入園門票</strong>每人$180元（20人以上團體票$150元）</div>
+        <div class="info-item"><strong>漆彈方案</strong>對戰二場，子彈 200 顆</div>
       </div>
 
       <!-- 5 大戰場 -->
@@ -1018,7 +1018,8 @@ function renderFamilyBlocks() {
       id: document.getElementById('f' + i + '-id').value,
       addr: (document.getElementById('f' + i + '-addr') || {value:''}).value,
       same: !!(document.getElementById('f' + i + '-sameaddr') || {}).checked,
-      pb: (document.querySelector('input[name="f' + i + '-pb"]:checked') || {value:''}).value
+      pb: (document.querySelector('input[name="f' + i + '-pb"]:checked') || {value:''}).value,
+      diet: (document.querySelector('input[name="f' + i + '-diet"]:checked') || {value:''}).value
     };
   }
   var html = '';
@@ -1049,6 +1050,18 @@ function renderFamilyBlocks() {
       + '<span>參與其他加購活動</span></label>'
       + '</div>'
       + '<p class="help-note" id="f' + i + '-pbnote" style="margin:6px 0 0;"></p></div>'
+      + '<div class="field" style="margin-bottom:4px;"><label>飲食需求<span class="req">*</span></label>'
+      + '<div class="radio-list">'
+      + '<label class="radio-item" onclick="selectRadio(\'f' + i + '-diet\',\'meat\')">'
+      + '<input type="radio" name="f' + i + '-diet" value="葷食（什麼都吃，來者不拒）" id="f' + i + '-diet-meat" onchange="updateProgress()">'
+      + '<span>葷食（什麼都吃，來者不拒）</span></label>'
+      + '<label class="radio-item" onclick="selectRadio(\'f' + i + '-diet\',\'veg\')">'
+      + '<input type="radio" name="f' + i + '-diet" value="全素 / 蛋奶素" id="f' + i + '-diet-veg" onchange="updateProgress()">'
+      + '<span>全素 / 蛋奶素</span></label>'
+      + '<label class="radio-item" onclick="selectRadio(\'f' + i + '-diet\',\'other\')">'
+      + '<input type="radio" name="f' + i + '-diet" value="其他特殊忌口（請於備註說明）" id="f' + i + '-diet-other" onchange="updateProgress()">'
+      + '<span>其他特殊忌口（請於備註說明）</span></label>'
+      + '</div></div>'
       + '<p class="help-note" id="f' + i + '-feenote" style="margin:6px 0 0;color:var(--amber);"></p>'
       + '</div>';
   }
@@ -1065,6 +1078,10 @@ function renderFamilyBlocks() {
       if (keep[i].pb) {
         var pbEl = document.querySelector('input[name="f' + i + '-pb"][value="' + keep[i].pb + '"]');
         if (pbEl) { pbEl.checked = true; pbEl.closest('.radio-item').classList.add('selected'); }
+      }
+      if (keep[i].diet) {
+        var dEl = document.querySelector('input[name="f' + i + '-diet"][value="' + keep[i].diet + '"]');
+        if (dEl) { dEl.checked = true; dEl.closest('.radio-item').classList.add('selected'); }
       }
     }
     famPbGate(i);
@@ -1114,6 +1131,7 @@ function updateProgress() {
     fields.push(!!(ie && ie.value.trim() !== ''));
     fields.push(!!((ce && ce.checked) || (ae && ae.value.trim() !== '')));
     fields.push(document.querySelector('input[name="f' + i + '-pb"]:checked') !== null);
+    fields.push(document.querySelector('input[name="f' + i + '-diet"]:checked') !== null);
   }
   var total = fields.length;
   var done = fields.filter(Boolean).length;
@@ -1166,8 +1184,9 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     var fsame = !!(document.getElementById('f' + i + '-sameaddr') || {}).checked;
     var faddr = fsame ? addr : (document.getElementById('f' + i + '-addr') || {value:''}).value.trim();
     var fpb   = (document.querySelector('input[name="f' + i + '-pb"]:checked') || {value:''}).value;
-    if (!fn || !fb || !fid || !faddr || !fpb) {
-      errMsg.textContent = '請完成「親友 ' + i + '」的姓名、出生年月日、身分證字號、地址、參與漆彈／水晶彈';
+    var fdiet = (document.querySelector('input[name="f' + i + '-diet"]:checked') || {value:''}).value;
+    if (!fn || !fb || !fid || !faddr || !fpb || !fdiet) {
+      errMsg.textContent = '請完成「親友 ' + i + '」的姓名、出生年月日、身分證字號、地址、參與漆彈／水晶彈、飲食需求';
       errMsg.classList.add('show');
       errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
@@ -1179,7 +1198,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
       errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    fam.push({ name: fn, birth: fb, id: fid, addr: faddr, same: fsame, fee: famFee(fb), pb: fpb });
+    fam.push({ name: fn, birth: fb, id: fid, addr: faddr, same: fsame, fee: famFee(fb), pb: fpb, diet: fdiet });
   }
   errMsg.classList.remove('show');
 
@@ -1205,7 +1224,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     paintballCount: pbCount, crystalCount: crystalCount
   };
   for (var i = 0; i < 5; i++) {
-    var f = fam[i] || { name: '', birth: '', id: '', addr: '', same: false, fee: '', pb: '' };
+    var f = fam[i] || { name: '', birth: '', id: '', addr: '', same: false, fee: '', pb: '', diet: '' };
     payload['f' + (i + 1) + 'name']  = f.name;
     payload['f' + (i + 1) + 'birth'] = f.birth;
     payload['f' + (i + 1) + 'id']    = f.id;
@@ -1213,6 +1232,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     payload['f' + (i + 1) + 'same']  = f.same;
     payload['f' + (i + 1) + 'fee']   = f.fee;
     payload['f' + (i + 1) + 'paintball'] = f.pb;
+    payload['f' + (i + 1) + 'diet']  = f.diet;
   }
 
   fetch(APPS_SCRIPT_URL, {
@@ -1240,7 +1260,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     var fr = '';
     fam.forEach(function(f, idx) {
       fr += '<div class="result-row"><span class="result-key">親友 ' + (idx + 1) + '</span><span class="result-val">'
-          + escHtml(f.name) + '｜' + escHtml(f.birth) + '｜' + escHtml(f.id) + '｜' + escHtml(f.addr) + '｜' + feeText(f.fee) + '｜' + escHtml(f.pb) + '</span></div>';
+          + escHtml(f.name) + '｜' + escHtml(f.birth) + '｜' + escHtml(f.id) + '｜' + escHtml(f.addr) + '｜' + feeText(f.fee) + '｜' + escHtml(f.pb) + '｜' + escHtml(f.diet) + '</span></div>';
     });
     document.getElementById('famResults').innerHTML = fr;
     document.getElementById('r-pbcount').textContent      = pbCount + ' 人';
@@ -1302,6 +1322,11 @@ function prefillFromSaved() {
       if (pbSaved) {
         var pbEl = document.querySelector('input[name="f' + i + '-pb"][value="' + pbSaved + '"]');
         if (pbEl && !pbEl.disabled) { pbEl.checked = true; pbEl.closest('.radio-item').classList.add('selected'); }
+      }
+      var dietSaved = d['f' + i + 'diet'];
+      if (dietSaved) {
+        var dEl = document.querySelector('input[name="f' + i + '-diet"][value="' + dietSaved + '"]');
+        if (dEl) { dEl.checked = true; dEl.closest('.radio-item').classList.add('selected'); }
       }
     }
   }
