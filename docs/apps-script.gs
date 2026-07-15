@@ -7,6 +7,11 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
+    // 截止檢查：7/23 整天可收，7/24（含）起拒收——與前端 SIGNUP_DEADLINE 同一日期，改截止日要兩邊一起改
+    if (new Date() >= new Date('2026-07-24T00:00:00+08:00')) {
+      return ContentService.createTextOutput(JSON.stringify({result:'closed'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     var data = JSON.parse(e.postData.contents);
     function v(x) { return x == null ? '' : x; }
 

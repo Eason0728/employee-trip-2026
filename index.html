@@ -420,7 +420,7 @@
         </tbody>
       </table>
       <div class="note-box" style="margin-top:1rem;">
-        <strong>👭 眷屬費用</strong>預估每人$5,000元 &emsp; 👦 12歲以下$2,000元 &emsp; 👶 3歲以下免費
+        <strong>👭 眷屬費用</strong>每人 $5,000元 &emsp; 👦 未滿12歲：$2,000元 &emsp; 👶 未滿3歲：免費
       </div>
     </div>
   </div>
@@ -700,14 +700,14 @@
       <div style="background:var(--green-light);border-left:3px solid var(--green);border-radius:6px;padding:10px 14px;margin-bottom:0.75rem;">
         <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:6px;letter-spacing:0.04em;">🎉 現場可加購的趣味活動</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;text-align:center;">
-          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">⚽</div>泡泡足球<br><span style="color:var(--ink-3);">$400元/人</span></div>
-          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🎤</div>格鬥擂台<br><span style="color:var(--ink-3);">$100元/人</span></div>
-          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🌀</div>旋轉擂台<br><span style="color:var(--ink-3);">$100元/人</span></div>
-          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🐛</div>毛毛蟲競走<br><span style="color:var(--ink-3);">$100元/人</span></div>
-          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🔐</div>密室逃脫<br><span style="color:var(--ink-3);">$200元/人</span></div>
-          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🎬</div>動感電影院<br><span style="color:var(--ink-3);">$100元/人</span></div>
+          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">⚽</div>泡泡足球</div>
+          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🎤</div>格鬥擂台</div>
+          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🌀</div>旋轉擂台</div>
+          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🐛</div>毛毛蟲競走</div>
+          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🔐</div>密室逃脫</div>
+          <div style="background:#fff;border-radius:6px;padding:6px 4px;font-size:11px;color:var(--ink-2);"><div style="font-size:15px;margin-bottom:2px;">🎬</div>動感電影院</div>
         </div>
-        <div style="font-size:11px;color:var(--ink-3);margin-top:6px;">＊加購第二項活動折扣 $50元，現場隨到隨玩（果凍蠟燭需預約）</div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:6px;">＊遊玩項目依照當天園區開放內容為準</div>
       </div>
 
       <!-- 官網連結 -->
@@ -864,7 +864,7 @@
             </label>
             <label class="radio-item" onclick="selectRadio('paintball','no')">
               <input type="radio" name="paintball" value="不參加，改玩其他加購活動" id="paintball-no" onchange="updateProgress()">
-              <span>不玩漆彈，改玩其他加購活動</span>
+              <span>不參加，改玩其他加購活動</span>
             </label>
           </div>
         </div>
@@ -954,9 +954,21 @@ function selectRadio(name, id) {
   updateProgress();
 }
 
+// 鍵盤方向鍵切換 radio 時同步 .selected 樣式（selectRadio 只處理滑鼠點擊）
+document.addEventListener('change', function(e) {
+  var t = e.target;
+  if (!t || t.type !== 'radio') return;
+  document.querySelectorAll('input[name="' + t.name + '"]').forEach(function(r) {
+    r.closest('.radio-item').classList.toggle('selected', r.checked);
+  });
+});
+
 // ── PROGRESS ──
 // ── 親友動態欄位與費用 ──
 var TRIP_DATE = new Date('2026-09-14T00:00:00+08:00');
+// 出生年月日不可晚於今天（本機時區的今日，YYYY-MM-DD）
+var TODAY_STR = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+document.getElementById('s-birth').max = TODAY_STR;
 function famAge(birth) {
   if (!birth) return null;
   var b = new Date(birth);
@@ -974,11 +986,13 @@ function famFee(birth) {
   return 5000;
 }
 // 漆彈滿12歲、水晶彈滿6歲（依出遊日年齡）
-var PB_YES = '參加漆彈對戰', PB_CRYSTAL = '我怕痛／要玩水晶彈', PB_NO = '參與其他加購活動';
+// PB_NO 與員工靜態選項（#paintball-no 的 value）必須是同一字串，改字要兩邊同步
+var PB_YES = '參加漆彈對戰', PB_CRYSTAL = '我怕痛／要玩水晶彈', PB_NO = '不參加，改玩其他加購活動';
+var PB_NO_LEGACY = '參與其他加購活動'; // 2026-07-16 前送出的舊資料用這個值
 function famPbAllowed(birth) {
   var age = famAge(birth);
   if (age === null) return { yes: false, crystal: false, note: '請先填出生年月日，依年齡開放可選項目' };
-  if (age < 6)  return { yes: false, crystal: false, note: '未滿 6 歲僅能選「參與其他加購活動」' };
+  if (age < 6)  return { yes: false, crystal: false, note: '未滿 6 歲僅能選「不參加，改玩其他加購活動」' };
   if (age < 12) return { yes: false, crystal: true,  note: '滿 6 歲未滿 12 歲，可玩水晶彈' };
   return { yes: true, crystal: true, note: '' };
 }
@@ -1017,6 +1031,7 @@ function renderFamilyBlocks() {
       birth: document.getElementById('f' + i + '-birth').value,
       id: document.getElementById('f' + i + '-id').value,
       addr: (document.getElementById('f' + i + '-addr') || {value:''}).value,
+      addrPrev: ((document.getElementById('f' + i + '-addr') || {}).dataset || {}).prev || '',
       same: !!(document.getElementById('f' + i + '-sameaddr') || {}).checked,
       pb: (document.querySelector('input[name="f' + i + '-pb"]:checked') || {value:''}).value,
       diet: (document.querySelector('input[name="f' + i + '-diet"]:checked') || {value:''}).value
@@ -1029,7 +1044,7 @@ function renderFamilyBlocks() {
       + '<div class="field"><label for="f' + i + '-name">姓名<span class="req">*</span></label>'
       + '<input type="text" id="f' + i + '-name" placeholder="親友真實姓名" oninput="updateProgress()"></div>'
       + '<div class="field"><label for="f' + i + '-birth">出生年月日<span class="req">*</span></label>'
-      + '<input type="date" id="f' + i + '-birth" onchange="famFeeNote(' + i + ');famPbGate(' + i + ');updateProgress()"></div>'
+      + '<input type="date" id="f' + i + '-birth" max="' + TODAY_STR + '" onchange="famFeeNote(' + i + ');famPbGate(' + i + ');updateProgress()"></div>'
       + '<div class="field"><label for="f' + i + '-id">身分證字號<span class="req">*</span></label>'
       + '<p class="help-note">外籍夥伴請填居留證統一證號</p>'
       + '<input type="text" id="f' + i + '-id" placeholder="例如 A123456789" maxlength="10" oninput="updateProgress()"></div>'
@@ -1047,7 +1062,7 @@ function renderFamilyBlocks() {
       + '<span>我怕痛／要玩水晶彈（滿 6 歲）</span></label>'
       + '<label class="radio-item" onclick="selectRadio(\'f' + i + '-pb\',\'no\')">'
       + '<input type="radio" name="f' + i + '-pb" value="' + PB_NO + '" id="f' + i + '-pb-no" onchange="updateProgress()">'
-      + '<span>參與其他加購活動</span></label>'
+      + '<span>不參加，改玩其他加購活動</span></label>'
       + '</div>'
       + '<p class="help-note" id="f' + i + '-pbnote" style="margin:6px 0 0;"></p></div>'
       + '<div class="field" style="margin-bottom:4px;"><label>飲食需求<span class="req">*</span></label>'
@@ -1072,6 +1087,7 @@ function renderFamilyBlocks() {
       document.getElementById('f' + i + '-birth').value = keep[i].birth;
       document.getElementById('f' + i + '-id').value    = keep[i].id;
       document.getElementById('f' + i + '-addr').value  = keep[i].addr;
+      if (keep[i].addrPrev) document.getElementById('f' + i + '-addr').dataset.prev = keep[i].addrPrev;
       document.getElementById('f' + i + '-sameaddr').checked = keep[i].same;
       toggleFamAddr(i);
       famFeeNote(i);
@@ -1092,13 +1108,21 @@ function toggleFamAddr(i) {
   var inp = document.getElementById('f' + i + '-addr');
   if (!chk || !inp) return;
   inp.disabled = chk.checked;
-  if (chk.checked) { inp.value = ''; inp.placeholder = '同員工地址（送出時自動帶入）'; }
-  else { inp.placeholder = '親友居住地址'; }
+  if (chk.checked) {
+    if (inp.value) inp.dataset.prev = inp.value; // 暫存已輸入的地址，取消勾選時還原
+    inp.value = '';
+    inp.placeholder = '同員工地址（送出時自動帶入）';
+  } else {
+    if (!inp.value && inp.dataset.prev) inp.value = inp.dataset.prev;
+    inp.placeholder = '親友居住地址';
+  }
 }
 function famFeeNote(i) {
   var el = document.getElementById('f' + i + '-feenote');
   if (!el) return;
-  var fee = famFee(document.getElementById('f' + i + '-birth').value);
+  var b = document.getElementById('f' + i + '-birth').value;
+  if (b && b > TODAY_STR) { el.textContent = '⚠️ 出生年月日不可晚於今天，請重新確認'; return; }
+  var fee = famFee(b);
   el.textContent = fee === null ? '' : '此位親友費用：' + feeText(fee) + '（依出遊日 2026/9/14 年齡自動計算）';
 }
 
@@ -1174,6 +1198,12 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
+  if (birth > TODAY_STR) {
+    errMsg.textContent = '出生年月日不可晚於今天，請重新確認';
+    errMsg.classList.add('show');
+    errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
 
   var n = parseInt(family, 10) || 0;
   var fam = [];
@@ -1187,6 +1217,12 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     var fdiet = (document.querySelector('input[name="f' + i + '-diet"]:checked') || {value:''}).value;
     if (!fn || !fb || !fid || !faddr || !fpb || !fdiet) {
       errMsg.textContent = '請完成「親友 ' + i + '」的姓名、出生年月日、身分證字號、地址、參與漆彈／水晶彈、飲食需求';
+      errMsg.classList.add('show');
+      errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (fb > TODAY_STR) {
+      errMsg.textContent = '「親友 ' + i + '」的出生年月日不可晚於今天，請重新確認';
       errMsg.classList.add('show');
       errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
@@ -1274,7 +1310,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
   })
   .catch(function() {
     btn.disabled = false;
-    btn.textContent = '送出報名';
+    btn.innerHTML = submitBtnHTML;
     errMsg.textContent = '送出失敗，請稍後再試';
     errMsg.classList.add('show');
   });
@@ -1319,6 +1355,7 @@ function prefillFromSaved() {
       famFeeNote(i);
       famPbGate(i);
       var pbSaved = d['f' + i + 'paintball'];
+      if (pbSaved === PB_NO_LEGACY) pbSaved = PB_NO; // 舊值相容：改字前送出的資料照樣回填
       if (pbSaved) {
         var pbEl = document.querySelector('input[name="f' + i + '-pb"][value="' + pbSaved + '"]');
         if (pbEl && !pbEl.disabled) { pbEl.checked = true; pbEl.closest('.radio-item').classList.add('selected'); }

@@ -121,10 +121,37 @@ function check(name, cond, extra) {
   const pct2 = (await page.textContent('#progressPct')).trim();
   check('progress full 31 / 31', pct2 === '31 / 31', pct2);
 
+  // ── 6.5 未來出生日期擋下（max 屬性＋送出驗證）──
+  const todayStr = await page.evaluate(() => TODAY_STR);
+  check('s-birth has max = today', (await page.getAttribute('#s-birth', 'max')) === todayStr,
+    await page.getAttribute('#s-birth', 'max'));
+  check('family birth has max = today', (await page.getAttribute('#f1-birth', 'max')) === todayStr);
+
+  await page.fill('#s-birth', '2030-01-01');
+  await page.click('.btn-submit');
+  check('employee future birth blocks submit',
+    (await page.textContent('#errorMsg')).includes('不可晚於今天'), await page.textContent('#errorMsg'));
+  check('not submitted (employee future birth)', submitted === null);
+  await page.fill('#s-birth', '1990-01-01');
+
+  await page.fill('#f3-birth', '2030-01-01');
+  await page.dispatchEvent('#f3-birth', 'change'); // 閘門會清掉 f3 的漆彈選擇
+  check('future birth fee note warns',
+    (await page.textContent('#f3-feenote')).includes('不可晚於今天'), await page.textContent('#f3-feenote'));
+  await page.click('label:has(#f3-pb-no)'); // 補一個合法選項讓完整性檢查先通過
+  await page.click('.btn-submit');
+  const errFuture = await page.textContent('#errorMsg');
+  check('family future birth blocks submit',
+    errFuture.includes('親友 3') && errFuture.includes('不可晚於今天'), errFuture);
+  check('not submitted (family future birth)', submitted === null);
+  await page.fill('#f3-birth', '2013-01-01');
+  await page.dispatchEvent('#f3-birth', 'change');
+  await page.click('label:has(#f3-pb-yes)'); // 還原原本的選擇
+
   // ── 7. Submit and inspect payload ──
   await page.click('.btn-submit');
   await page.waitForSelector('#resultWrap.visible', { timeout: 5000 });
-  check('payload f1paintball = 參與其他加購活動', submitted.f1paintball === '參與其他加購活動', submitted.f1paintball);
+  check('payload f1paintball = 不參加，改玩其他加購活動', submitted.f1paintball === '不參加，改玩其他加購活動', submitted.f1paintball);
   check('payload f2paintball = crystal', submitted.f2paintball === '我怕痛／要玩水晶彈');
   check('payload f3paintball = paintball', submitted.f3paintball === '參加漆彈對戰');
   check('payload paintballCount = 2 (employee + f3)', submitted.paintballCount === 2, String(submitted.paintballCount));
@@ -162,6 +189,29 @@ function check(name, cond, extra) {
   check('old V1 key untouched', await page.evaluate(() => localStorage.getItem('malaTrip2026Signup') !== null));
   check('fresh visit shows 0 / 13', (await page.textContent('#progressPct')).trim() === '0 / 13');
 
+  // ── 9.5 舊 PB 值（參與其他加購活動）相容映射 ──
+  await page.evaluate(() => {
+    localStorage.setItem('malaTrip2026SignupV2', JSON.stringify({
+      unit: '小辛辣', store: '光復', name: '映射測試', family: '1',
+      f1name: '舊親友', f1birth: '2018-01-01', f1id: 'C123456789', f1same: true,
+      f1paintball: '參與其他加購活動', f1diet: '全素 / 蛋奶素'
+    }));
+  });
+  await page.reload();
+  await page.evaluate(() => switchTab(3));
+  check('legacy PB_NO value maps to 不參加 option', await page.isChecked('#f1-pb-no'));
+
+  // ── 9.6 鍵盤方向鍵選 radio 也要有 selected 樣式 ──
+  await page.focus('#diet-meat');
+  await page.keyboard.press('ArrowDown');
+  check('keyboard-selected radio is checked', await page.isChecked('#diet-veg'));
+  check('keyboard-selected radio gets selected class',
+    await page.evaluate(() => document.getElementById('diet-veg').closest('.radio-item').classList.contains('selected')));
+
+  await page.evaluate(() => localStorage.removeItem('malaTrip2026SignupV2'));
+  await page.reload();
+  await page.evaluate(() => switchTab(3));
+
   // ── 10. Family count change keeps selections ──
   await page.selectOption('#s-family', '2');
   await page.fill('#f1-birth', '2013-01-01');
@@ -169,6 +219,14 @@ function check(name, cond, extra) {
   await page.click('label:has(#f1-pb-yes)');
   await page.selectOption('#s-family', '3');
   check('pb selection survives family count change', await page.isChecked('#f1-pb-yes'));
+
+  // ── 11. 勾「同上」再取消，已輸入的地址要還原 ──
+  await page.fill('#f1-addr', '測試路99號');
+  await page.check('#f1-sameaddr');
+  check('addr cleared while 同上 checked', (await page.inputValue('#f1-addr')) === '');
+  await page.uncheck('#f1-sameaddr');
+  check('addr restored after unchecking 同上', (await page.inputValue('#f1-addr')) === '測試路99號',
+    await page.inputValue('#f1-addr'));
 
   await browser.close();
   console.log(failures === 0 ? '\nALL TESTS PASSED' : `\n${failures} FAILURES`);
