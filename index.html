@@ -759,7 +759,7 @@
       <div class="progress-bar-wrap">
         <div class="progress-meta">
           <span id="progressLabel">尚未開始填寫</span>
-          <span id="progressPct">0 / 12</span>
+          <span id="progressPct">0 / 13</span>
         </div>
         <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
       </div>
@@ -828,7 +828,7 @@
         <div class="section-label">交通與參與</div>
         <div class="field">
           <label for="s-pickup">搭車地點<span class="req">*</span></label>
-          <p class="help-note">本次一律搭乘公司專車，請選擇上車地點</p>
+          <p class="help-note">公司安排專車接送，請選擇上車地點。</p>
           <select id="s-pickup" onchange="updateProgress()">
             <option value="">— 請選擇 —</option>
             <option value="台中">台中</option>
@@ -856,13 +856,13 @@
               <input type="radio" name="paintball" value="參加漆彈對戰" id="paintball-yes" onchange="updateProgress()">
               <span>參加，熱血開打！</span>
             </label>
-            <label class="radio-item" onclick="selectRadio('paintball','no')">
-              <input type="radio" name="paintball" value="不參加，改玩其他加購活動" id="paintball-no" onchange="updateProgress()">
-              <span>不玩漆彈，改玩其他加購活動</span>
-            </label>
             <label class="radio-item" onclick="selectRadio('paintball','crystal')">
               <input type="radio" name="paintball" value="我怕痛／要玩水晶彈" id="paintball-crystal" onchange="updateProgress()">
               <span>我怕痛／要玩水晶彈</span>
+            </label>
+            <label class="radio-item" onclick="selectRadio('paintball','no')">
+              <input type="radio" name="paintball" value="不參加，改玩其他加購活動" id="paintball-no" onchange="updateProgress()">
+              <span>不玩漆彈，改玩其他加購活動</span>
             </label>
           </div>
         </div>
@@ -1233,6 +1233,8 @@ if (new Date() >= SIGNUP_DEADLINE) {
   document.getElementById('closedNotice').style.display = 'block';
 } else if (prefillFromSaved()) {
   document.getElementById('savedNotice').style.display = 'block';
+} else {
+  updateProgress();
 }
 
 document.getElementById('editAgainBtn').addEventListener('click', function() {
