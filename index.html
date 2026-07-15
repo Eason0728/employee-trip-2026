@@ -850,7 +850,7 @@
         </div>
         <div id="familyWrap"></div>
         <div class="field">
-          <label>參與漆彈<span class="req">*</span></label>
+          <label>參與漆彈／水晶彈<span class="req">*</span></label>
           <div class="radio-list">
             <label class="radio-item" onclick="selectRadio('paintball','yes')">
               <input type="radio" name="paintball" value="參加漆彈對戰" id="paintball-yes" onchange="updateProgress()">
@@ -859,6 +859,10 @@
             <label class="radio-item" onclick="selectRadio('paintball','no')">
               <input type="radio" name="paintball" value="不參加，改玩其他加購活動" id="paintball-no" onchange="updateProgress()">
               <span>不玩漆彈，改玩其他加購活動</span>
+            </label>
+            <label class="radio-item" onclick="selectRadio('paintball','crystal')">
+              <input type="radio" name="paintball" value="我怕痛／要玩水晶彈" id="paintball-crystal" onchange="updateProgress()">
+              <span>我怕痛／要玩水晶彈</span>
             </label>
           </div>
         </div>
@@ -912,7 +916,7 @@
         <div id="famResults"></div>
         <div class="result-row"><span class="result-key">親友費用小計</span><span class="result-val" id="r-famfee"></span></div>
         <div class="result-row"><span class="result-key">自費總計（含親友）</span><span class="result-val" id="r-total" style="color:var(--red);font-weight:700;"></span></div>
-        <div class="result-row"><span class="result-key">參與漆彈</span><span class="result-val" id="r-paintball"></span></div>
+        <div class="result-row"><span class="result-key">參與漆彈／水晶彈</span><span class="result-val" id="r-paintball"></span></div>
         <div class="result-row"><span class="result-key">飲食習慣</span><span class="result-val" id="r-diet"></span></div>
         <div class="result-row"><span class="result-key">備註</span><span class="result-val" id="r-memo"></span></div>
         <button type="button" id="editAgainBtn" class="btn-submit" style="margin-top:1.25rem;">✏️ 修改資料，重新送出</button>
