@@ -974,11 +974,11 @@ function famFee(birth) {
   return 5000;
 }
 // 漆彈滿12歲、水晶彈滿6歲（依出遊日年齡）
-var PB_YES = '參加漆彈對戰', PB_CRYSTAL = '我怕痛／要玩水晶彈', PB_NO = '不參加';
+var PB_YES = '參加漆彈對戰', PB_CRYSTAL = '我怕痛／要玩水晶彈', PB_NO = '參與其他加購活動';
 function famPbAllowed(birth) {
   var age = famAge(birth);
   if (age === null) return { yes: false, crystal: false, note: '請先填出生年月日，依年齡開放可選項目' };
-  if (age < 6)  return { yes: false, crystal: false, note: '未滿 6 歲僅能選「不參加」' };
+  if (age < 6)  return { yes: false, crystal: false, note: '未滿 6 歲僅能選「參與其他加購活動」' };
   if (age < 12) return { yes: false, crystal: true,  note: '滿 6 歲未滿 12 歲，可玩水晶彈' };
   return { yes: true, crystal: true, note: '' };
 }
@@ -1045,7 +1045,7 @@ function renderFamilyBlocks() {
       + '<span>我怕痛／要玩水晶彈（滿 6 歲）</span></label>'
       + '<label class="radio-item" onclick="selectRadio(\'f' + i + '-pb\',\'no\')">'
       + '<input type="radio" name="f' + i + '-pb" value="' + PB_NO + '" id="f' + i + '-pb-no" onchange="updateProgress()">'
-      + '<span>不參加</span></label>'
+      + '<span>參與其他加購活動</span></label>'
       + '</div>'
       + '<p class="help-note" id="f' + i + '-pbnote" style="margin:6px 0 0;"></p></div>'
       + '<p class="help-note" id="f' + i + '-feenote" style="margin:6px 0 0;color:var(--amber);"></p>'
