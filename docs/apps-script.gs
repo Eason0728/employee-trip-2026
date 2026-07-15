@@ -1,8 +1,9 @@
 // 2026 員旅「報名登記表」後端 V2：寫入「報名登記V2」分頁＋自動建立「統計」分頁
 // ⚠️ 本檔僅為備份。實際生效的程式碼在使用者 Google 帳號的 Apps Script 專案裡，
-//    前端 payload 欄位有增減時：更新本檔 → 把完整內容貼給使用者取代 → 刪掉
-//    「報名登記V2」「統計」分頁讓表頭重建 → 管理部署作業→編輯→新版本→部署
-//    （不可按「新增部署作業」，會換網址）。
+//    前端 payload 欄位有增減時：更新本檔 → 把完整內容貼給使用者取代 →
+//    管理部署作業→編輯→新版本→部署（不可按「新增部署作業」，會換網址）。
+//    欄位規則（2026-07-16 起，報名已開跑）：只能「尾端新增」欄位，doPost 會自動補表頭；
+//    「統計」分頁可刪（純公式，下一筆送出自動重建）；「報名登記V2」分頁**絕對不能刪**（會刪光已報名資料）。
 function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
@@ -23,7 +24,7 @@ function doPost(e) {
       HEADERS.push('親友'+i+'姓名','親友'+i+'出生年月日','親友'+i+'身分證字號',
                    '親友'+i+'地址','親友'+i+'漆彈／水晶彈','親友'+i+'飲食','親友'+i+'費用');
     }
-    HEADERS.push('親友費用小計','自費總計');
+    HEADERS.push('親友費用小計','自費總計','同房需求');
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(TAB);
@@ -36,6 +37,10 @@ function doPost(e) {
         sheet.getRange(r).setNumberFormat('@');
       });
     }
+    // 尾端新增欄位時自動補表頭（分頁已有資料不能刪，只補第 1 列）
+    if (sheet.getRange(1, HEADERS.length).getValue() === '') {
+      sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+    }
 
     var row = [new Date(),
       v(data.unit), v(data.store), v(data.name), v(data.birth),
@@ -47,7 +52,7 @@ function doPost(e) {
       row.push(v(data['f'+i+'name']), v(data['f'+i+'birth']), v(data['f'+i+'id']),
                v(data['f'+i+'addr']), v(data['f'+i+'paintball']), v(data['f'+i+'diet']), v(data['f'+i+'fee']));
     }
-    row.push(v(data.familyFee), v(data.totalFee));
+    row.push(v(data.familyFee), v(data.totalFee), v(data.roommates));
     sheet.appendRow(row);
 
     ensureStatsSheet(ss);
@@ -66,8 +71,8 @@ function doPost(e) {
 function ensureStatsSheet(ss) {
   if (ss.getSheetByName('統計')) return;
   var st = ss.insertSheet('統計');
-  st.getRange('A1').setFormula("={'報名登記V2'!A1:BB1}");
-  st.getRange('A2').setFormula("=SORTN(SORT('報名登記V2'!A2:BB,1,FALSE),9^9,2,6,TRUE)");
+  st.getRange('A1').setFormula("={'報名登記V2'!A1:BC1}");
+  st.getRange('A2').setFormula("=SORTN(SORT('報名登記V2'!A2:BC,1,FALSE),9^9,2,6,TRUE)");
   st.getRange('BD1:BD8').setValues([
     ['報名員工數'],['總人數(含親友)'],['漆彈總人數'],['水晶彈總人數'],
     ['葷食人數(含親友)'],['全素人數(含親友)'],['特殊忌口人數(含親友)'],['自費總計']

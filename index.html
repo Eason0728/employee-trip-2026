@@ -564,7 +564,7 @@
       </div>
 
       <div class="note-box" style="margin-top:1rem;">
-        <strong>💡 小提醒</strong>建議穿著輕便、帶換洗衣物。露營區地勢有坡度，不建議穿高跟鞋。<br>若有個人藥品或特殊需求請提前告知工作人員。
+        <strong>💡 小提醒</strong>建議穿著輕便、帶換洗衣物。露營區地勢有坡度，不建議穿高跟鞋。<br>個人藥品請隨身攜帶，若有特殊需求請提前告知工作人員。
       </div>
     </div>
   </div>
@@ -891,6 +891,14 @@
           <label for="s-memo">其他想說的話或特殊需求</label>
           <input type="text" id="s-memo" placeholder="例如：搭車需求、飲食細節…">
         </div>
+        <div class="field">
+          <label>同房需求（必須湊滿四人才能指定）</label>
+          <p class="help-note" style="background:var(--surface);border-radius:6px;padding:6px 10px;">請填寫全名，一位同仁當代表填寫即可</p>
+          <input type="text" id="s-room1" placeholder="同房夥伴 1" style="margin-bottom:6px;">
+          <input type="text" id="s-room2" placeholder="同房夥伴 2" style="margin-bottom:6px;">
+          <input type="text" id="s-room3" placeholder="同房夥伴 3" style="margin-bottom:6px;">
+          <input type="text" id="s-room4" placeholder="同房夥伴 4">
+        </div>
 
         <p class="error-msg" id="errorMsg">請完成所有必填項目（標示 * 的欄位）</p>
         <button type="submit" class="btn-submit">
@@ -923,6 +931,7 @@
         <div class="result-row"><span class="result-key">本筆水晶彈人數（含親友）</span><span class="result-val" id="r-crystalcount"></span></div>
         <div class="result-row"><span class="result-key">飲食習慣</span><span class="result-val" id="r-diet"></span></div>
         <div class="result-row"><span class="result-key">備註</span><span class="result-val" id="r-memo"></span></div>
+        <div class="result-row"><span class="result-key">同房需求</span><span class="result-val" id="r-room"></span></div>
         <button type="button" id="editAgainBtn" class="btn-submit" style="margin-top:1.25rem;">✏️ 修改資料，重新送出</button>
       </div>
 
@@ -1248,6 +1257,10 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     + fam.filter(function(f) { return f.pb === PB_CRYSTAL; }).length;
 
   var memo = document.getElementById('s-memo').value.trim() || '無';
+  // 同房需求（選填）：四格取非空值，用「、」串成一欄
+  var roommates = ['s-room1','s-room2','s-room3','s-room4'].map(function(id) {
+    return document.getElementById(id).value.trim();
+  }).filter(Boolean).join('、');
   var btn  = document.querySelector('.btn-submit');
   btn.disabled = true;
   btn.textContent = '送出中…';
@@ -1256,6 +1269,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     unit: unit, store: store, name: name, role: role, birth: birth,
     id: pid, phone: phone, addr: addr, pickup: pickup, family: family,
     paintball: paintball.value, fee: fee, diet: diet.value, memo: memo,
+    roommates: roommates,
     familyFee: feeFam, totalFee: feeTotal,
     paintballCount: pbCount, crystalCount: crystalCount
   };
@@ -1293,6 +1307,7 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
     document.getElementById('r-fee').textContent       = fee;
     document.getElementById('r-diet').textContent      = diet.value;
     document.getElementById('r-memo').textContent      = memo;
+    document.getElementById('r-room').textContent      = roommates || '無';
     var fr = '';
     fam.forEach(function(f, idx) {
       fr += '<div class="result-row"><span class="result-key">親友 ' + (idx + 1) + '</span><span class="result-val">'
@@ -1339,6 +1354,12 @@ function prefillFromSaved() {
     });
   });
   if (d.memo && d.memo !== '無') document.getElementById('s-memo').value = d.memo;
+  if (d.roommates) {
+    d.roommates.split('、').forEach(function(nm, idx) {
+      var el = document.getElementById('s-room' + (idx + 1));
+      if (el) el.value = nm;
+    });
+  }
   renderFamilyBlocks();
   var n = parseInt(d.family || '0', 10) || 0;
   for (var i = 1; i <= n; i++) {

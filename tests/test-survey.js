@@ -44,6 +44,8 @@ function check(name, cond, extra) {
   await page.selectOption('#s-pickup', { index: 1 });
   await page.click('#paintball-yes');
   await page.click('#diet-meat');
+  await page.fill('#s-room1', '測試員');
+  await page.fill('#s-room2', '王小明');
 
   // ── 3. Family = 3, distinct ages ──
   await page.selectOption('#s-family', '3');
@@ -160,6 +162,8 @@ function check(name, cond, extra) {
   check('payload f2diet veg', submitted.f2diet === '全素 / 蛋奶素');
   check('payload f3diet other', submitted.f3diet === '其他特殊忌口（請於備註說明）');
   check('payload stored under V2 key', await page.evaluate(() => !!localStorage.getItem('malaTrip2026SignupV2')));
+  check('payload roommates joined (optional field)', submitted.roommates === '測試員、王小明', submitted.roommates);
+  check('result shows 同房需求', (await page.textContent('#r-room')).trim() === '測試員、王小明');
 
   // Confirmation page rows
   check('result shows 漆彈人數 2 人', (await page.textContent('#r-pbcount')).trim() === '2 人');
@@ -177,6 +181,9 @@ function check(name, cond, extra) {
   check('prefill f3 diet restored', await page.isChecked('#f3-diet-other'));
   const pct3 = (await page.textContent('#progressPct')).trim();
   check('prefill progress 31 / 31', pct3 === '31 / 31', pct3);
+  check('prefill roommates split back into slots',
+    (await page.inputValue('#s-room1')) === '測試員' && (await page.inputValue('#s-room2')) === '王小明'
+    && (await page.inputValue('#s-room3')) === '', await page.inputValue('#s-room1'));
 
   // ── 9. Old V1 localStorage data must NOT prefill (fresh questionnaire) ──
   await page.evaluate(() => {
