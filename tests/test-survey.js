@@ -235,6 +235,36 @@ function check(name, cond, extra) {
   check('addr restored after unchecking 同上', (await page.inputValue('#f1-addr')) === '測試路99號',
     await page.inputValue('#f1-addr'));
 
+  // ── 12. 截止後唯讀查閱：手機上先前存過的資料仍看得到（不能修改）──
+  var closedPayload = {
+    unit: '小辛辣', store: '光復', name: '截止查閱測試', role: '正職', birth: '1990-05-05',
+    id: 'D123456789', phone: '0911111111', addr: '測試地址', pickup: '新竹',
+    family: '1', paintball: '參加漆彈對戰', fee: '$1,000元', diet: '葷食（什麼都吃，來者不拒）',
+    memo: '測試備註', roommates: '同房甲、同房乙',
+    familyFee: 2000, totalFee: 3000, paintballCount: 1, crystalCount: 0,
+    f1name: '親友X', f1birth: '2016-01-01', f1id: 'E123456789', f1addr: '測試地址',
+    f1same: true, f1fee: 2000, f1paintball: '我怕痛／要玩水晶彈', f1diet: '全素 / 蛋奶素'
+  };
+  await page.evaluate((p) => localStorage.setItem('malaTrip2026SignupV2', JSON.stringify(p)), closedPayload);
+  await page.clock.install({ time: new Date('2026-07-25T09:00:00+08:00') });
+  await page.reload();
+  await page.evaluate(() => switchTab(3));
+  check('closed: form hidden', !(await page.isVisible('#surveyForm')));
+  check('closed: closedNotice shown', await page.isVisible('#closedNotice'));
+  check('closed: resultWrap visible with saved data', await page.isVisible('#resultWrap'));
+  check('closed: readonly name shown', (await page.textContent('#r-name')).trim() === '截止查閱測試');
+  check('closed: readonly roommates shown', (await page.textContent('#r-room')).trim() === '同房甲、同房乙');
+  check('closed: readonly family row shown', (await page.textContent('#famResults')).includes('親友X'));
+  check('closed: editAgainBtn hidden (cannot resubmit)', !(await page.isVisible('#editAgainBtn')));
+  check('closed: success text explains read-only', (await page.textContent('#resultSuccessText')).includes('僅供查閱'));
+
+  // 沒有本機資料的情況：只顯示截止公告，不出現查閱區塊
+  await page.evaluate(() => localStorage.removeItem('malaTrip2026SignupV2'));
+  await page.reload();
+  await page.evaluate(() => switchTab(3));
+  check('closed w/o local data: no resultWrap shown', !(await page.isVisible('#resultWrap')));
+  check('closed w/o local data: closedNotice still shown', await page.isVisible('#closedNotice'));
+
   await browser.close();
   console.log(failures === 0 ? '\nALL TESTS PASSED' : `\n${failures} FAILURES`);
   process.exit(failures === 0 ? 0 : 1);

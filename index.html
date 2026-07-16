@@ -910,7 +910,7 @@
       <div class="result-wrap" id="resultWrap">
         <div class="result-success">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          報名已送出！以下是您的登記資料
+          <span id="resultSuccessText">報名已送出！以下是您的登記資料</span>
         </div>
         <div class="result-row"><span class="result-key">單位</span><span class="result-val" id="r-unit"></span></div>
         <div class="result-row"><span class="result-key">店別</span><span class="result-val" id="r-store"></span></div>
@@ -1027,6 +1027,53 @@ function escHtml(t) {
   return String(t).replace(/[&<>"']/g, function(c) {
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
+}
+
+// 把 payload 形狀的物件（不論剛送出、或截止後從 localStorage 讀回）畫到確認頁；
+// 正常送出與截止後查閱共用這段，避免兩處各自維護、改一邊忘改另一邊。
+function renderResultView(d) {
+  var n = parseInt(d.family || '0', 10) || 0;
+  var fam = [];
+  for (var i = 1; i <= n; i++) {
+    fam.push({
+      name: d['f' + i + 'name'] || '', birth: d['f' + i + 'birth'] || '',
+      id: d['f' + i + 'id'] || '', addr: d['f' + i + 'addr'] || '',
+      fee: d['f' + i + 'fee'] || 0, pb: d['f' + i + 'paintball'] || '', diet: d['f' + i + 'diet'] || ''
+    });
+  }
+  var feeFam = fam.reduce(function(sum, f) { return sum + (f.fee || 0); }, 0);
+  var feeSelf = parseInt((d.fee || '').replace(/[^0-9]/g, ''), 10) || 0;
+  var feeTotal = (typeof d.totalFee === 'number') ? d.totalFee : (feeSelf + feeFam);
+  var pbCount = (typeof d.paintballCount === 'number') ? d.paintballCount
+    : ((d.paintball === PB_YES ? 1 : 0) + fam.filter(function(f) { return f.pb === PB_YES; }).length);
+  var crystalCount = (typeof d.crystalCount === 'number') ? d.crystalCount
+    : ((d.paintball === PB_CRYSTAL ? 1 : 0) + fam.filter(function(f) { return f.pb === PB_CRYSTAL; }).length);
+
+  document.getElementById('r-unit').textContent      = d.unit || '';
+  document.getElementById('r-store').textContent     = d.store || '';
+  document.getElementById('r-name').textContent      = d.name || '';
+  document.getElementById('r-role').textContent      = d.role || '';
+  document.getElementById('r-birth').textContent     = d.birth || '';
+  document.getElementById('r-id').textContent        = d.id || '';
+  document.getElementById('r-phone').textContent     = d.phone || '';
+  document.getElementById('r-addr').textContent      = d.addr || '';
+  document.getElementById('r-pickup').textContent    = d.pickup || '';
+  document.getElementById('r-family').textContent    = (d.family || '0') + ' 人';
+  document.getElementById('r-paintball').textContent = d.paintball || '';
+  document.getElementById('r-fee').textContent       = d.fee || '';
+  document.getElementById('r-diet').textContent      = d.diet || '';
+  document.getElementById('r-memo').textContent      = d.memo || '無';
+  document.getElementById('r-room').textContent      = d.roommates || '無';
+  var fr = '';
+  fam.forEach(function(f, idx) {
+    fr += '<div class="result-row"><span class="result-key">親友 ' + (idx + 1) + '</span><span class="result-val">'
+        + escHtml(f.name) + '｜' + escHtml(f.birth) + '｜' + escHtml(f.id) + '｜' + escHtml(f.addr) + '｜' + feeText(f.fee) + '｜' + escHtml(f.pb) + '｜' + escHtml(f.diet) + '</span></div>';
+  });
+  document.getElementById('famResults').innerHTML = fr;
+  document.getElementById('r-pbcount').textContent      = pbCount + ' 人';
+  document.getElementById('r-crystalcount').textContent = crystalCount + ' 人';
+  document.getElementById('r-famfee').textContent = '$' + feeFam.toLocaleString() + '元';
+  document.getElementById('r-total').textContent  = '$' + feeTotal.toLocaleString() + '元';
 }
 
 function renderFamilyBlocks() {
@@ -1293,31 +1340,9 @@ document.getElementById('surveyForm').addEventListener('submit', function(e) {
   })
   .then(function() {
     try { localStorage.setItem(SIGNUP_KEY, JSON.stringify(payload)); } catch (e2) {}
-    document.getElementById('r-unit').textContent      = unit;
-    document.getElementById('r-store').textContent     = store;
-    document.getElementById('r-name').textContent      = name;
-    document.getElementById('r-role').textContent      = role;
-    document.getElementById('r-birth').textContent     = birth;
-    document.getElementById('r-id').textContent        = pid;
-    document.getElementById('r-phone').textContent     = phone;
-    document.getElementById('r-addr').textContent      = addr;
-    document.getElementById('r-pickup').textContent    = pickup;
-    document.getElementById('r-family').textContent    = family + ' 人';
-    document.getElementById('r-paintball').textContent = paintball.value;
-    document.getElementById('r-fee').textContent       = fee;
-    document.getElementById('r-diet').textContent      = diet.value;
-    document.getElementById('r-memo').textContent      = memo;
-    document.getElementById('r-room').textContent      = roommates || '無';
-    var fr = '';
-    fam.forEach(function(f, idx) {
-      fr += '<div class="result-row"><span class="result-key">親友 ' + (idx + 1) + '</span><span class="result-val">'
-          + escHtml(f.name) + '｜' + escHtml(f.birth) + '｜' + escHtml(f.id) + '｜' + escHtml(f.addr) + '｜' + feeText(f.fee) + '｜' + escHtml(f.pb) + '｜' + escHtml(f.diet) + '</span></div>';
-    });
-    document.getElementById('famResults').innerHTML = fr;
-    document.getElementById('r-pbcount').textContent      = pbCount + ' 人';
-    document.getElementById('r-crystalcount').textContent = crystalCount + ' 人';
-    document.getElementById('r-famfee').textContent = '$' + feeFam.toLocaleString() + '元';
-    document.getElementById('r-total').textContent  = '$' + feeTotal.toLocaleString() + '元';
+    renderResultView(payload);
+    document.getElementById('resultSuccessText').textContent = '報名已送出！以下是您的登記資料';
+    document.getElementById('editAgainBtn').style.display = '';
     document.getElementById('surveyForm').style.display = 'none';
     var rw = document.getElementById('resultWrap');
     rw.classList.add('visible');
@@ -1392,10 +1417,25 @@ function prefillFromSaved() {
   return true;
 }
 
+// 截止後：表單關閉，但若這台裝置先前有送出過，唯讀顯示最後一筆資料（無法再修改）
+function showClosedReadonly() {
+  var raw = null;
+  try { raw = localStorage.getItem(SIGNUP_KEY); } catch (e) {}
+  if (!raw) return false;
+  var d;
+  try { d = JSON.parse(raw); } catch (e) { return false; }
+  renderResultView(d);
+  document.getElementById('resultSuccessText').textContent = '報名已截止，以下是您最後送出的報名資料（僅供查閱，無法再修改）';
+  document.getElementById('editAgainBtn').style.display = 'none';
+  document.getElementById('resultWrap').classList.add('visible');
+  return true;
+}
+
 if (new Date() >= SIGNUP_DEADLINE) {
   document.getElementById('surveyForm').style.display = 'none';
   document.querySelector('.progress-bar-wrap').style.display = 'none';
   document.getElementById('closedNotice').style.display = 'block';
+  showClosedReadonly();
 } else if (prefillFromSaved()) {
   document.getElementById('savedNotice').style.display = 'block';
 } else {
