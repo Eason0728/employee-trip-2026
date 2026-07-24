@@ -12,6 +12,13 @@ repo: `Eason0728/employee-trip-2026`（public）
 
 > 注意：這不是排班 app（mala-schedule）。兩個專案互不相干，只是同一個使用者。
 
+## 補報名頁（makeup.html，2026-07-24 起）
+
+- 網址 `.../employee-trip-2026/makeup.html`，**由 `trip-data/build_makeup.py` 從 index.html 產生**（切出 hero＋費用表＋panel-3 表單，換文案與截止日）——欄位/驗證/payload 與原問卷完全一致（tests/test-makeup.js 有逐欄比對斷言），寫同一個 Apps Script 與「報名登記V2」。
+- 截止：前端 `SIGNUP_DEADLINE`＝2026-07-28T00:00+08:00（7/27 整天可填），後端同日期。**原問卷 index.html 維持 7/24 截止不動**——兩頁截止日各自獨立。
+- 改表單欄位時：改 index.html → 重跑產生器出 makeup.html → 兩組測試（test-survey.js 68 項＋test-makeup.js 21 項）都要過。
+- 測試都用 `page.clock.install` 固定「現在」，不受執行日期影響。
+
 ## 頁面結構
 
 4 個分頁（`switchTab(idx)`、`#panel-0..3`）：旅遊介紹（含費用方案一覽）／第一天（9/14 出發＆入住）／第二天（9/15 漆彈＆返家，含獵鷹漆彈介紹）／**報名登記表（panel-3）**。

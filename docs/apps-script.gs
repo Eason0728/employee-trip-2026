@@ -8,8 +8,9 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
-    // 截止檢查：7/23 整天可收，7/24（含）起拒收——與前端 SIGNUP_DEADLINE 同一日期，改截止日要兩邊一起改
-    if (new Date() >= new Date('2026-07-24T00:00:00+08:00')) {
+    // 截止檢查：補報名開放至 7/27 整天，7/28（含）起拒收
+    // ——與前端 SIGNUP_DEADLINE 同一日期，改截止日要「前後端一起改」，且務必先部署後端再上前端
+    if (new Date() >= new Date('2026-07-28T00:00:00+08:00')) {
       return ContentService.createTextOutput(JSON.stringify({result:'closed'}))
         .setMimeType(ContentService.MimeType.JSON);
     }

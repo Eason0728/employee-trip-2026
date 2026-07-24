@@ -24,6 +24,9 @@ function check(name, cond, extra) {
     route.fulfill({ status: 200, body: '' });
   });
 
+  // 固定「現在」在原問卷開放期間，測試才不會因為執行日期已過截止日而整組失敗
+  await page.clock.install({ time: new Date('2026-07-20T10:00:00+08:00') });
+
   await page.goto(BASE);
   await page.evaluate(() => switchTab(3)); // 問卷 tab
 
