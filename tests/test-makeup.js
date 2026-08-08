@@ -23,7 +23,7 @@ function check(name, cond, extra) {
   });
 
   // 假設「現在」是補報名開放期間（7/25）
-  await page.clock.install({ time: new Date('2026-08-05T10:00:00+08:00') });
+  await page.clock.install({ time: new Date('2026-08-08T10:00:00+08:00') });
   await page.goto(BASE);
 
   // 1. 不需切分頁，表單直接可見
@@ -110,11 +110,11 @@ function check(name, cond, extra) {
   await p2.close();
 
   // 6. 截止後（7/28）表單關閉
-  await page.clock.install({ time: new Date('2026-08-07T09:00:00+08:00') });
+  await page.clock.install({ time: new Date('2026-08-10T09:00:00+08:00') });
   await page.goto(BASE);
-  check('8/7 表單關閉', !(await page.isVisible('#surveyForm')));
-  check('8/7 顯示截止公告', await page.isVisible('#closedNotice'));
-  check('截止公告寫 8/6', (await page.textContent('#closedNotice')).includes('8/6'));
+  check('8/10 表單關閉', !(await page.isVisible('#surveyForm')));
+  check('8/10 顯示截止公告', await page.isVisible('#closedNotice'));
+  check('截止公告寫 8/9', (await page.textContent('#closedNotice')).includes('8/9'));
 
   await browser.close();
   console.log(failures === 0 ? '\nALL TESTS PASSED' : `\n${failures} FAILURES`);

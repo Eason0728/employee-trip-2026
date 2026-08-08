@@ -8,9 +8,9 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
-    // 截止檢查：補報名二次開放至 8/6 整天，8/7（含）起拒收
+    // 截止檢查：補報名三次開放至 8/9 整天，8/10（含）起拒收
     // ——與前端 SIGNUP_DEADLINE 同一日期，改截止日要「前後端一起改」，且務必先部署後端再上前端
-    if (new Date() >= new Date('2026-08-07T00:00:00+08:00')) {
+    if (new Date() >= new Date('2026-08-10T00:00:00+08:00')) {
       return ContentService.createTextOutput(JSON.stringify({result:'closed'}))
         .setMimeType(ContentService.MimeType.JSON);
     }
