@@ -349,7 +349,7 @@
   </div>
   <div class="hero-badge">2026 年度員工旅遊</div>
   <h1>法定代理人資料</h1>
-  <div class="hero-sub">未滿 18 歲同仁專用　·　9 / 14（一）— 9 / 15（二）桃園</div>
+  <div class="hero-sub">未滿 18 歲專用（含眷屬）　·　9 / 14（一）— 9 / 15（二）桃園</div>
 </div>
 
 <div class="panel active" id="panel-g">
@@ -358,13 +358,14 @@
       <span class="card-header-icon">📝</span>
       <div class="card-header-text">
         <h2>法定代理人資料登記</h2>
-        <p>依法規，未滿 18 歲同仁參加公司活動需檢附法定代理人資料</p>
+        <p>依法規，未滿 18 歲者參加公司活動需檢附法定代理人資料</p>
       </div>
     </div>
     <div class="card-body">
 
       <div class="g-note">
-        👤 本表僅需<strong>未滿 18 歲的同仁</strong>填寫（出遊日 2026/9/14 計算）。<br>
+        👤 本表供<strong>未滿 18 歲的同仁與眷屬</strong>填寫（出遊日 2026/9/14 計算）。<br>
+        👨‍👩‍👧 眷屬由隨行的同仁代填即可。<br>
         📋 法定代理人＝父／母／監護人。<br>
         ✏️ 填錯可重新開啟本頁再送一次，以最新一筆為準。<br>
         🔒 資料僅供本次活動保險與緊急聯絡使用。
@@ -384,13 +385,13 @@
 
       <form id="gForm" novalidate>
 
-        <div class="section-label">同仁本人</div>
+        <div class="section-label">未成年本人</div>
         <div class="field">
           <label for="g-name">姓名<span class="req">*</span></label>
-          <p class="help-note">請從名單中選擇你的姓名</p>
+          <p class="help-note">請從名單中選擇（眷屬請由隨行同仁代選）</p>
           <select id="g-name" onchange="onNamePick();updateProgress()">
             <option value="">— 請選擇 —</option>
-            <option value="林宸妤" data-unit="小辛辣" data-store="光復店">林宸妤（小辛辣·光復店）</option><option value="王禹婕" data-unit="小辛辣" data-store="光復店">王禹婕（小辛辣·光復店）</option><option value="徐佑昕" data-unit="小辛辣" data-store="光復店">徐佑昕（小辛辣·光復店）</option><option value="洪愷昱" data-unit="墨竹亭" data-store="光復店">洪愷昱（墨竹亭·光復店）</option><option value="周冠銘" data-unit="墨竹亭" data-store="金山店">周冠銘（墨竹亭·金山店）</option><option value="林亞韻" data-unit="墨竹亭" data-store="金山店">林亞韻（墨竹亭·金山店）</option>
+            <option value="林宸妤" data-unit="小辛辣" data-store="光復店">林宸妤（小辛辣·光復店）</option><option value="王禹婕" data-unit="小辛辣" data-store="光復店">王禹婕（小辛辣·光復店）</option><option value="徐佑昕" data-unit="小辛辣" data-store="光復店">徐佑昕（小辛辣·光復店）</option><option value="洪愷昱" data-unit="墨竹亭" data-store="光復店">洪愷昱（墨竹亭·光復店）</option><option value="周冠銘" data-unit="墨竹亭" data-store="金山店">周冠銘（墨竹亭·金山店）</option><option value="林亞韻" data-unit="墨竹亭" data-store="金山店">林亞韻（墨竹亭·金山店）</option><option value="郭品暄" data-unit="小辛辣" data-store="光復店">郭品暄（小辛辣·光復店｜眷屬·許雅筑）</option><option value="郭柏揚" data-unit="小辛辣" data-store="光復店">郭柏揚（小辛辣·光復店｜眷屬·許雅筑）</option><option value="張峮寧" data-unit="央廚" data-store="央廚">張峮寧（央廚·央廚｜眷屬·張祥茗）</option>
           </select>
         </div>
         <div class="field">
@@ -448,7 +449,7 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           <span id="resultTitle">資料已送出！以下是您登記的內容</span>
         </div>
-        <div class="result-row"><span class="result-key">同仁姓名</span><span class="result-val" id="r-name"></span></div>
+        <div class="result-row"><span class="result-key">姓名</span><span class="result-val" id="r-name"></span></div>
         <div class="result-row"><span class="result-key">單位／店別</span><span class="result-val" id="r-store"></span></div>
         <div class="result-row"><span class="result-key">法定代理人</span><span class="result-val" id="r-gname"></span></div>
         <div class="result-row"><span class="result-key">關係</span><span class="result-val" id="r-rel"></span></div>

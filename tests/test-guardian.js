@@ -29,15 +29,27 @@ function check(name, cond, extra) {
     await page.textContent('#progressPct'));
   check('關係「其他」欄預設隱藏', !(await page.isVisible('#relOtherWrap')));
 
-  // 2. 名單只有 5 位未成年同仁
+  // 2. 名單＝9 位未成年（6 同仁＋3 眷屬）
   const names = await page.$$eval('#g-name option', os => os.filter(o => o.value).map(o => o.value));
-  check('名單為 6 位未成年', names.length === 6, names.join(','));
+  check('名單為 9 位未成年', names.length === 9, names.join(','));
   check('名單內容正確',
-    ['林宸妤','王禹婕','徐佑昕','洪愷昱','周冠銘','林亞韻'].every(n => names.includes(n)), names.join(','));
-  // 林亞韻（眷屬）也在名單、店別正確
+    ['林宸妤','王禹婕','徐佑昕','洪愷昱','周冠銘','林亞韻','郭品暄','郭柏揚','張峮寧']
+      .every(n => names.includes(n)), names.join(','));
   await page.selectOption('#g-name', '林亞韻');
   check('林亞韻店別＝墨竹亭金山店', (await page.inputValue('#g-store')) === '墨竹亭｜金山店',
     await page.inputValue('#g-store'));
+  // 眷屬：店別正確、選項標註隨行員工
+  await page.selectOption('#g-name', '郭品暄');
+  check('郭品暄店別＝小辛辣光復店', (await page.inputValue('#g-store')) === '小辛辣｜光復店',
+    await page.inputValue('#g-store'));
+  await page.selectOption('#g-name', '張峮寧');
+  check('張峮寧店別＝央廚', (await page.inputValue('#g-store')) === '央廚｜央廚',
+    await page.inputValue('#g-store'));
+  const labels = await page.$$eval('#g-name option', os => os.map(o => o.textContent));
+  check('眷屬選項標註隨行員工',
+    labels.some(t => t.includes('郭品暄') && t.includes('許雅筑')) &&
+    labels.some(t => t.includes('張峮寧') && t.includes('張祥茗')),
+    labels.filter(t => t.includes('郭品暄') || t.includes('張峮寧')).join(' / '));
 
   // 3. 選姓名自動帶入單位店別
   await page.selectOption('#g-name', '周冠銘');
