@@ -19,6 +19,13 @@ repo: `Eason0728/employee-trip-2026`（public）
 - 改表單欄位時：改 index.html → 重跑產生器出 makeup.html → 兩組測試（test-survey.js 68 項＋test-makeup.js 21 項）都要過。
 - 測試都用 `page.clock.install` 固定「現在」，不受執行日期影響。
 
+## 法定代理人資料頁（guardian.html，2026-08-12 起）
+
+- 網址 `.../employee-trip-2026/guardian.html`；**未滿 18 歲同仁專用**（依出遊日 2026/9/14 計算，目前 5 位：林宸妤／王禹婕／徐佑昕＝小辛辣光復店、洪愷昱＝墨竹亭光復店、周冠銘＝墨竹亭金山店）。名單寫死在 `trip-data/build_guardian.py` 的 `MINORS`，**新報名的未成年同仁要手動補進去再重跑產生器**。
+- 收：同仁姓名（下拉選單，自動帶單位店別）/出生/身分證＋法代姓名/關係/身分證/手機/地址＋備註。關係選「其他」才顯示說明欄。
+- 後端：**共用報名系統同一個 Apps Script 與部署 ID**，靠 payload 的 `formType:'guardian'` 在 doPost 最前面分流到 `handleGuardian()`，寫「法定代理人」分頁（自動建表頭、身分證/手機設文字格式）。**刻意不做截止檢查**——這份要收到出發前。
+- 測試 `tests/test-guardian.js`（29 項）。眷屬的法代不另外收（法代＝隨行員工本人）。
+
 ## 頁面結構
 
 4 個分頁（`switchTab(idx)`、`#panel-0..3`）：旅遊介紹（含費用方案一覽）／第一天（9/14 出發＆入住）／第二天（9/15 漆彈＆返家，含獵鷹漆彈介紹）／**報名登記表（panel-3）**。

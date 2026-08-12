@@ -8,13 +8,19 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.tryLock(10000);
   try {
+    // 【分流】法定代理人資料（未滿18歲同仁填）走獨立分頁，不受報名截止日限制
+    var probe = JSON.parse(e.postData.contents);
+    if (probe && probe.formType === 'guardian') {
+      return handleGuardian(probe);
+    }
+
     // 截止檢查：補報名延長至 8/10 整天，8/11（含）起拒收
     // ——與前端 SIGNUP_DEADLINE 同一日期，改截止日要「前後端一起改」，且務必先部署後端再上前端
     if (new Date() >= new Date('2026-08-11T00:00:00+08:00')) {
       return ContentService.createTextOutput(JSON.stringify({result:'closed'}))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    var data = JSON.parse(e.postData.contents);
+    var data = probe;
     function v(x) { return x == null ? '' : x; }
 
     var TAB = '報名登記V2';
@@ -89,4 +95,30 @@ function ensureStatsSheet(ss) {
     ['=SUM(BB2:BB)']
   ]);
   st.setFrozenRows(1);
+}
+
+
+// ── 法定代理人資料（未滿 18 歲同仁）──────────────────────────
+// 寫入「法定代理人」分頁；同一位同仁重複送出＝append 新列，取最新一筆為準。
+// 刻意不做截止檢查：這份資料要收到出發前，跟報名截止日無關。
+function handleGuardian(data) {
+  function v(x) { return x == null ? '' : x; }
+  var TAB = '法定代理人';
+  var HEADERS = ['時間','單位','店別','同仁姓名','同仁出生年月日','同仁身分證字號',
+                 '法定代理人姓名','與同仁關係','法代身分證字號','法代手機','法代地址','備註'];
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(TAB);
+    sheet.appendRow(HEADERS);
+    sheet.setFrozenRows(1);
+    // 身分證(F,I)與手機(J) 存成文字，避免變成數字/科學記號
+    ['F:F','I:I','J:J'].forEach(function(r) { sheet.getRange(r).setNumberFormat('@'); });
+    sheet.setColumnWidth(11, 320);
+  }
+  sheet.appendRow([new Date(),
+    v(data.unit), v(data.store), v(data.name), v(data.birth), v(data.id),
+    v(data.gName), v(data.gRelation), v(data.gId), v(data.gPhone), v(data.gAddr), v(data.memo)]);
+  return ContentService.createTextOutput(JSON.stringify({result:'ok'}))
+    .setMimeType(ContentService.MimeType.JSON);
 }
