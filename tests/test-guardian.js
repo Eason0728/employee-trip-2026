@@ -25,15 +25,19 @@ function check(name, cond, extra) {
 
   // 1. 基本呈現
   check('表單直接顯示', await page.isVisible('#gForm'));
-  check('進度條起始 0 / 8', (await page.textContent('#progressPct')).trim() === '0 / 8',
+  check('進度條起始 0 / 6', (await page.textContent('#progressPct')).trim() === '0 / 6',
     await page.textContent('#progressPct'));
   check('關係「其他」欄預設隱藏', !(await page.isVisible('#relOtherWrap')));
 
   // 2. 名單只有 5 位未成年同仁
   const names = await page.$$eval('#g-name option', os => os.filter(o => o.value).map(o => o.value));
-  check('名單為 5 位未成年同仁', names.length === 5, names.join(','));
+  check('名單為 6 位未成年', names.length === 6, names.join(','));
   check('名單內容正確',
-    ['林宸妤','王禹婕','徐佑昕','洪愷昱','周冠銘'].every(n => names.includes(n)), names.join(','));
+    ['林宸妤','王禹婕','徐佑昕','洪愷昱','周冠銘','林亞韻'].every(n => names.includes(n)), names.join(','));
+  // 林亞韻（眷屬）也在名單、店別正確
+  await page.selectOption('#g-name', '林亞韻');
+  check('林亞韻店別＝墨竹亭金山店', (await page.inputValue('#g-store')) === '墨竹亭｜金山店',
+    await page.inputValue('#g-store'));
 
   // 3. 選姓名自動帶入單位店別
   await page.selectOption('#g-name', '周冠銘');
@@ -41,10 +45,9 @@ function check(name, cond, extra) {
     await page.inputValue('#g-store'));
   check('單位店別欄唯讀', await page.getAttribute('#g-store', 'readonly') !== null);
 
-  // 4. 出生日期不可晚於今天
-  const todayMax = await page.getAttribute('#g-birth', 'max');
-  const todayStr = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
-  check('出生日期 max = 今天', todayMax === todayStr, todayMax);
+  // 4. 已移除同仁出生年月日／身分證欄位
+  check('無同仁出生年月日欄', (await page.locator('#g-birth').count()) === 0);
+  check('無同仁身分證欄', (await page.locator('#g-id').count()) === 0);
 
   // 5. 必填未完成擋送出
   await page.click('.btn-submit');
@@ -52,8 +55,6 @@ function check(name, cond, extra) {
   check('未送出', submitted === null);
 
   // 6. 關係選「其他」會冒出說明欄，且未填不算完成
-  await page.fill('#g-birth', '2009-06-01');
-  await page.fill('#g-id', 'O100833898');
   await page.fill('#gg-name', '周家長');
   await page.selectOption('#gg-rel', '其他');
   check('選其他後說明欄出現', await page.isVisible('#relOtherWrap'));
@@ -66,7 +67,7 @@ function check(name, cond, extra) {
   await page.fill('#gg-id', 'A223456789');
   await page.fill('#gg-phone', '0911222333');
   await page.fill('#gg-addr', '新竹市東區寶山路64號');
-  check('全部完成 8 / 8', (await page.textContent('#progressPct')).trim() === '8 / 8',
+  check('全部完成 6 / 6', (await page.textContent('#progressPct')).trim() === '6 / 6',
     await page.textContent('#progressPct'));
 
   await page.click('.btn-submit');
@@ -87,14 +88,11 @@ function check(name, cond, extra) {
   check('回填姓名', (await page.inputValue('#g-name')) === '周冠銘');
   check('回填法代手機', (await page.inputValue('#gg-phone')) === '0911222333');
   check('回填關係其他說明', (await page.inputValue('#gg-rel-other')) === '祖母');
-  check('回填後進度 8 / 8', (await page.textContent('#progressPct')).trim() === '8 / 8');
+  check('回填後進度 6 / 6', (await page.textContent('#progressPct')).trim() === '6 / 6');
 
-  // 9. 未來出生日期擋下
-  submitted = null;
-  await page.fill('#g-birth', '2030-01-01');
-  await page.click('.btn-submit');
-  check('未來出生日期擋下', (await page.textContent('#errorMsg')).includes('不可晚於今天'));
-  check('未來出生日期未送出', submitted === null);
+  // 9. payload 不含同仁出生/身分證
+  check('payload 無 birth 欄', !('birth' in submitted), JSON.stringify(Object.keys(submitted)));
+  check('payload 無 id 欄', !('id' in submitted), JSON.stringify(Object.keys(submitted)));
 
   await browser.close();
   console.log(failures === 0 ? '\nALL TESTS PASSED' : `\n${failures} FAILURES`);

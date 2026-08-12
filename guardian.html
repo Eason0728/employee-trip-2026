@@ -377,7 +377,7 @@
       <div class="progress-bar-wrap">
         <div class="progress-meta">
           <span id="progressLabel">尚未開始填寫</span>
-          <span id="progressPct">0 / 7</span>
+          <span id="progressPct">0 / 6</span>
         </div>
         <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
       </div>
@@ -390,22 +390,13 @@
           <p class="help-note">請從名單中選擇你的姓名</p>
           <select id="g-name" onchange="onNamePick();updateProgress()">
             <option value="">— 請選擇 —</option>
-            <option value="林宸妤" data-unit="小辛辣" data-store="光復店">林宸妤（小辛辣·光復店）</option><option value="王禹婕" data-unit="小辛辣" data-store="光復店">王禹婕（小辛辣·光復店）</option><option value="徐佑昕" data-unit="小辛辣" data-store="光復店">徐佑昕（小辛辣·光復店）</option><option value="洪愷昱" data-unit="墨竹亭" data-store="光復店">洪愷昱（墨竹亭·光復店）</option><option value="周冠銘" data-unit="墨竹亭" data-store="金山店">周冠銘（墨竹亭·金山店）</option>
+            <option value="林宸妤" data-unit="小辛辣" data-store="光復店">林宸妤（小辛辣·光復店）</option><option value="王禹婕" data-unit="小辛辣" data-store="光復店">王禹婕（小辛辣·光復店）</option><option value="徐佑昕" data-unit="小辛辣" data-store="光復店">徐佑昕（小辛辣·光復店）</option><option value="洪愷昱" data-unit="墨竹亭" data-store="光復店">洪愷昱（墨竹亭·光復店）</option><option value="周冠銘" data-unit="墨竹亭" data-store="金山店">周冠銘（墨竹亭·金山店）</option><option value="林亞韻" data-unit="墨竹亭" data-store="金山店">林亞韻（墨竹亭·金山店）</option>
           </select>
         </div>
         <div class="field">
           <label for="g-store">單位／店別</label>
           <input type="text" id="g-store" readonly placeholder="選擇姓名後自動帶入"
                  style="background:var(--surface);color:var(--ink-3);">
-        </div>
-        <div class="field">
-          <label for="g-birth">出生年月日<span class="req">*</span></label>
-          <input type="date" id="g-birth" onchange="updateProgress()">
-        </div>
-        <div class="field">
-          <label for="g-id">身分證字號<span class="req">*</span></label>
-          <p class="help-note">外籍夥伴請填居留證統一證號</p>
-          <input type="text" id="g-id" placeholder="例如 A123456789" maxlength="10" oninput="updateProgress()">
         </div>
 
         <div class="section-label">法定代理人</div>
@@ -459,8 +450,6 @@
         </div>
         <div class="result-row"><span class="result-key">同仁姓名</span><span class="result-val" id="r-name"></span></div>
         <div class="result-row"><span class="result-key">單位／店別</span><span class="result-val" id="r-store"></span></div>
-        <div class="result-row"><span class="result-key">出生年月日</span><span class="result-val" id="r-birth"></span></div>
-        <div class="result-row"><span class="result-key">身分證字號</span><span class="result-val" id="r-id"></span></div>
         <div class="result-row"><span class="result-key">法定代理人</span><span class="result-val" id="r-gname"></span></div>
         <div class="result-row"><span class="result-key">關係</span><span class="result-val" id="r-rel"></span></div>
         <div class="result-row"><span class="result-key">法代身分證</span><span class="result-val" id="r-gid"></span></div>
@@ -477,8 +466,6 @@
 <script>
 var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzuHkSc1GTTJQEuBd33vo3L9UcAcbd1loMCNsnGYOM3T9KAZ_s6hRZo-wBywv7R7VZP/exec';
 var KEY = 'malaTrip2026Guardian';
-var TODAY_STR = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-document.getElementById('g-birth').max = TODAY_STR;
 var submitBtnHTML = document.querySelector('.btn-submit').innerHTML;
 
 function onNamePick() {
@@ -503,8 +490,6 @@ function updateProgress() {
     (document.getElementById('gg-rel').value !== '其他' || document.getElementById('gg-rel-other').value.trim() !== '');
   var fields = [
     document.getElementById('g-name').value !== '',
-    document.getElementById('g-birth').value !== '',
-    document.getElementById('g-id').value.trim() !== '',
     document.getElementById('gg-name').value.trim() !== '',
     relOK,
     document.getElementById('gg-id').value.trim() !== '',
@@ -526,8 +511,6 @@ document.getElementById('gForm').addEventListener('submit', function(e) {
   var name = sel.value;
   var o = sel.options[sel.selectedIndex];
   var unit = o.getAttribute('data-unit') || '', store = o.getAttribute('data-store') || '';
-  var birth = document.getElementById('g-birth').value;
-  var pid = document.getElementById('g-id').value.trim();
   var gName = document.getElementById('gg-name').value.trim();
   var gRel = relText();
   var gId = document.getElementById('gg-id').value.trim();
@@ -535,14 +518,8 @@ document.getElementById('gForm').addEventListener('submit', function(e) {
   var gAddr = document.getElementById('gg-addr').value.trim();
   var memo = document.getElementById('g-memo').value.trim() || '無';
 
-  if (!name || !birth || !pid || !gName || !gRel || !gId || !gPhone || !gAddr) {
+  if (!name || !gName || !gRel || !gId || !gPhone || !gAddr) {
     errMsg.textContent = '請完成所有必填項目（標示 * 的欄位）';
-    errMsg.classList.add('show');
-    errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    return;
-  }
-  if (birth > TODAY_STR) {
-    errMsg.textContent = '出生年月日不可晚於今天，請重新確認';
     errMsg.classList.add('show');
     errMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
@@ -554,7 +531,7 @@ document.getElementById('gForm').addEventListener('submit', function(e) {
 
   var payload = {
     formType: 'guardian',
-    unit: unit, store: store, name: name, birth: birth, id: pid,
+    unit: unit, store: store, name: name,
     gName: gName, gRelation: gRel, gId: gId, gPhone: gPhone, gAddr: gAddr, memo: memo
   };
 
@@ -567,8 +544,6 @@ document.getElementById('gForm').addEventListener('submit', function(e) {
     try { localStorage.setItem(KEY, JSON.stringify(payload)); } catch (e2) {}
     document.getElementById('r-name').textContent   = name;
     document.getElementById('r-store').textContent  = unit + '｜' + store;
-    document.getElementById('r-birth').textContent  = birth;
-    document.getElementById('r-id').textContent     = pid;
     document.getElementById('r-gname').textContent  = gName;
     document.getElementById('r-rel').textContent    = gRel;
     document.getElementById('r-gid').textContent    = gId;
@@ -593,8 +568,6 @@ function prefill() {
   if (!raw) return false;
   var d; try { d = JSON.parse(raw); } catch (e) { return false; }
   if (d.name) { document.getElementById('g-name').value = d.name; onNamePick(); }
-  if (d.birth) document.getElementById('g-birth').value = d.birth;
-  if (d.id) document.getElementById('g-id').value = d.id;
   if (d.gName) document.getElementById('gg-name').value = d.gName;
   if (d.gRelation) {
     var r = d.gRelation;

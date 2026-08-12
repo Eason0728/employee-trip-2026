@@ -104,7 +104,7 @@ function ensureStatsSheet(ss) {
 function handleGuardian(data) {
   function v(x) { return x == null ? '' : x; }
   var TAB = '法定代理人';
-  var HEADERS = ['時間','單位','店別','同仁姓名','同仁出生年月日','同仁身分證字號',
+  var HEADERS = ['時間','單位','店別','同仁姓名',
                  '法定代理人姓名','與同仁關係','法代身分證字號','法代手機','法代地址','備註'];
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(TAB);
@@ -112,12 +112,12 @@ function handleGuardian(data) {
     sheet = ss.insertSheet(TAB);
     sheet.appendRow(HEADERS);
     sheet.setFrozenRows(1);
-    // 身分證(F,I)與手機(J) 存成文字，避免變成數字/科學記號
-    ['F:F','I:I','J:J'].forEach(function(r) { sheet.getRange(r).setNumberFormat('@'); });
-    sheet.setColumnWidth(11, 320);
+    // 法代身分證(G)與手機(H) 存成文字，避免變成數字/科學記號
+    ['G:G','H:H'].forEach(function(r) { sheet.getRange(r).setNumberFormat('@'); });
+    sheet.setColumnWidth(9, 320);
   }
   sheet.appendRow([new Date(),
-    v(data.unit), v(data.store), v(data.name), v(data.birth), v(data.id),
+    v(data.unit), v(data.store), v(data.name),
     v(data.gName), v(data.gRelation), v(data.gId), v(data.gPhone), v(data.gAddr), v(data.memo)]);
   return ContentService.createTextOutput(JSON.stringify({result:'ok'}))
     .setMimeType(ContentService.MimeType.JSON);
