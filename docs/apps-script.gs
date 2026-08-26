@@ -14,9 +14,9 @@ function doPost(e) {
       return handleGuardian(probe);
     }
 
-    // 截止檢查：補報名延長至 8/10 整天，8/11（含）起拒收
+    // 截止檢查：補報名再次開放至 8/26 整天，8/27（含）起拒收
     // ——與前端 SIGNUP_DEADLINE 同一日期，改截止日要「前後端一起改」，且務必先部署後端再上前端
-    if (new Date() >= new Date('2026-08-11T00:00:00+08:00')) {
+    if (new Date() >= new Date('2026-08-27T00:00:00+08:00')) {
       return ContentService.createTextOutput(JSON.stringify({result:'closed'}))
         .setMimeType(ContentService.MimeType.JSON);
     }
