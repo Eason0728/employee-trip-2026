@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>鼎鼎好聲音・評分</title>
+<style>
+:root{
+  color-scheme: dark;
+  --bg:#12100E; --card:#1B1815; --card2:#231F1A;
+  --line:#332C25; --text:#F2ECE2; --dim:#B4A796; --faint:#7E7365;
+  --gold:#E8C468; --ember:#FF8A3D; --ok:#57AC81; --bad:#E4574A;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text)}
+body{
+  font-family:"PingFang TC","Heiti TC",system-ui,sans-serif;
+  font-size:17px;line-height:1.6;
+  padding:0 16px 48px;max-width:520px;margin:0 auto;
+  -webkit-font-smoothing:antialiased;
+}
+h1{font-size:22px;margin:22px 0 4px;letter-spacing:.02em}
+.sub{color:var(--faint);font-size:13.5px;margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 16px;margin-bottom:14px}
+.label{font-size:13px;color:var(--dim);letter-spacing:.06em;margin-bottom:10px}
+button{font-family:inherit;font-size:17px;border-radius:9px;border:1px solid var(--line);
+  background:var(--card2);color:var(--text);padding:13px 16px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
+.primary{background:var(--ember);border-color:var(--ember);color:#1B1008;font-weight:700;width:100%;padding:16px;font-size:18px}
+.primary:disabled{background:var(--card2);border-color:var(--line);color:var(--faint);font-weight:400}
+.ghost{background:transparent;color:var(--dim);width:100%}
+
+/* 組別選擇 */
+.groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px}
+.groups button{padding:12px 4px;font-size:18px;font-variant-numeric:tabular-nums;line-height:1.25}
+.groups button[aria-pressed=true]{background:var(--gold);border-color:var(--gold);color:#1B1008;font-weight:700}
+.groups button.done{border-style:dashed;color:var(--dim)}
+.groups button .got{display:block;font-size:12px;color:var(--ok);font-weight:600}
+.groups button[aria-pressed=true] .got{color:#1B1008}
+.groups button:disabled{opacity:.32;cursor:not-allowed}
+
+/* 評分列 */
+.crit{margin-bottom:20px}
+.crit:last-of-type{margin-bottom:8px}
+.crit h3{font-size:16px;margin:0 0 2px}
+.crit p{font-size:13px;color:var(--faint);margin:0 0 10px}
+.scale{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}
+.scale button{padding:15px 0;font-size:19px;font-variant-numeric:tabular-nums}
+.scale button[aria-pressed=true]{background:var(--gold);border-color:var(--gold);color:#1B1008;font-weight:700}
+
+/* 已評分的唯讀畫面 */
+.recap{display:flex;flex-direction:column;gap:1px;background:var(--line);border-radius:9px;overflow:hidden}
+.recap div{display:flex;justify-content:space-between;align-items:baseline;
+  background:var(--card2);padding:12px 14px}
+.recap span{color:var(--dim);font-size:15px}
+.recap b{font-size:20px;font-variant-numeric:tabular-nums;font-family:ui-monospace,monospace}
+.recap .tot{background:var(--bg)}
+.recap .tot b{color:var(--gold);font-size:24px}
+
+.msg{border-radius:9px;padding:13px 15px;font-size:15px;margin-bottom:14px;display:none}
+.msg.show{display:block}
+.msg.ok{background:rgba(87,172,129,.12);border:1px solid rgba(87,172,129,.4);color:#A8DCC2}
+.msg.bad{background:rgba(228,87,74,.12);border:1px solid rgba(228,87,74,.4);color:#F0AAA3}
+
+/* 排名 */
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;padding:9px 0;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--faint);letter-spacing:.1em;font-weight:400}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;font-family:ui-monospace,monospace}
+tr.top td{color:var(--gold)}
+.hint{font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.55}
+</style>
+</head>
+<body>
+
+<h1>鼎鼎好聲音</h1>
+<div id="demoBar" style="display:none;background:#3A2A12;border:1px solid #7A5A1E;color:#F0D9A0;
+  border-radius:9px;padding:11px 14px;font-size:13.5px;line-height:1.5;margin:14px 0 0">
+  <b>示範模式</b>　後端網址還沒填，資料只存在這台電腦的瀏覽器裡。
+  主持人控制台在 <a href="vote-admin.html" style="color:#F0D9A0">vote-admin.html</a>。
+</div>
+<p class="sub">主持人喊第幾組，就評第幾組。<b>每組只能評一次，送出後不能改。</b></p>
+
+<div id="msg" class="msg"></div>
+
+<section class="card">
+  <div class="label">要評哪一組</div>
+  <div class="groups" id="groups"><p class="hint" style="margin:0">讀取中…</p></div>
+</section>
+
+<!-- 還沒評分：打分數 -->
+<section class="card" id="form" hidden>
+  <div class="crit">
+    <h3>唱功</h3>
+    <p>音準、節奏，有沒有走音破音</p>
+    <div class="scale" data-k="s1"></div>
+  </div>
+  <div class="crit">
+    <h3>感情</h3>
+    <p>有沒有唱進去、有沒有被打動</p>
+    <div class="scale" data-k="s2"></div>
+  </div>
+  <div class="crit">
+    <h3>炒熱度</h3>
+    <p>台上的樣子、跟大家的互動、好不好玩</p>
+    <div class="scale" data-k="s3"></div>
+  </div>
+  <button class="primary" id="send" disabled>送出評分</button>
+  <p class="hint">送出之後就不能修改了，確定再按。</p>
+</section>
+
+<!-- 已評分：唯讀 -->
+<section class="card" id="recorded" hidden>
+  <div class="label">你給 <b id="rgNum">—</b> 號的分數</div>
+  <div class="recap">
+    <div><span>唱功</span><b id="r1">—</b></div>
+    <div><span>感情</span><b id="r2">—</b></div>
+    <div><span>炒熱度</span><b id="r3">—</b></div>
+    <div class="tot"><span>小計</span><b id="rt">—</b></div>
+  </div>
+  <p class="hint">已經送出的分數不能修改。</p>
+</section>
+
+<section class="card">
+  <div class="label">目前排名</div>
+  <div id="rank"><p class="hint" style="margin:0">按下面的按鈕看最新排名。</p></div>
+  <button class="ghost" id="refresh" style="margin-top:12px">看目前排名</button>
+</section>
+
+<script src="vote-demo.js"></script>
+<script>
+(function(){
+'use strict';
+
+var API  = window.VOTE_API || 'PASTE_APPS_SCRIPT_URL_HERE';  // window.VOTE_API 只給回測覆寫用
+var DEMO = (API === 'PASTE_APPS_SCRIPT_URL_HERE') && !!window.VOTE_DEMO;
+if (DEMO) { var _db = document.getElementById('demoBar'); if (_db) _db.style.display = 'block'; }
+
+var LS = 'malaVote2026';
+var state = {dev:'', g:0, s1:0, s2:0, s3:0, total:0, openTo:0, done:{}};
+
+/* ---------- 裝置編號：一支手機一組，就是「一人一票」的憑據 ---------- */
+function newDev(){
+  try {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, '');
+  } catch(e){}
+  var s = '', c = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  for (var i = 0; i < 24; i++) s += c.charAt(Math.floor(Math.random() * c.length));
+  return s + String(Date.now()).slice(-6);
+}
+
+/* ---------- JSONP：Apps Script 沒有 CORS header，用 script 標籤才讀得到回應 ---------- */
+var seq = 0;
+function call(params, cb){
+  if (DEMO) { var r = window.VOTE_DEMO(params); setTimeout(function(){ cb(r); }, 140); return; }
+  var name = '__vcb' + (++seq);
+  var done = false;
+  var s = document.createElement('script');
+  var t = setTimeout(function(){ finish({ok:false, err:'timeout'}); }, 12000);
+
+  function finish(res){
+    if (done) return; done = true;
+    clearTimeout(t);
+    try { delete window[name]; } catch(e){ window[name] = undefined; }
+    if (s.parentNode) s.parentNode.removeChild(s);
+    cb(res);
+  }
+  window[name] = function(res){ finish(res); };
+  s.onerror = function(){ finish({ok:false, err:'network'}); };
+
+  var q = ['callback=' + name];
+  for (var k in params) if (params.hasOwnProperty(k)) {
+    q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
+  }
+  s.src = API + '?' + q.join('&');
+  document.head.appendChild(s);
+}
+
+/* ---------- 訊息 ---------- */
+var msgEl = document.getElementById('msg'), msgTimer;
+function say(text, kind){
+  clearTimeout(msgTimer);
+  msgEl.textContent = text;
+  msgEl.className = 'msg show ' + (kind || 'ok');
+  if (kind !== 'bad') msgTimer = setTimeout(function(){ msgEl.className = 'msg'; }, 4000);
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+function errText(code){
+  return {
+    nodev   : '這台裝置認不出來，重新整理一次頁面。',
+    notopen : '這一組還沒開放評分，等主持人喊。',
+    dup     : '這一組你已經評過了。',
+    closed  : '評分已經結束了。',
+    badscore: '三個項目都要選 1 到 5 分。',
+    timeout : '連不上伺服器。請確認有沒有訊號，再按一次送出。',
+    network : '連不上伺服器。請確認有沒有訊號，再按一次送出。'
+  }[code] || '送出失敗，再按一次試試。';
+}
+
+/* ---------- 本機記錄 ---------- */
+function load(){
+  try {
+    var d = JSON.parse(localStorage.getItem(LS) || '{}');
+    state.dev  = d.dev  || '';
+    state.done = d.done || {};
+  } catch(e){}
+  if (!state.dev){ state.dev = newDev(); save(); }
+}
+function save(){
+  try { localStorage.setItem(LS, JSON.stringify({dev:state.dev, done:state.done})); } catch(e){}
+}
+
+/* ---------- 畫面 ---------- */
+var groupsEl   = document.getElementById('groups');
+var formEl     = document.getElementById('form');
+var sendEl     = document.getElementById('send');
+var recordedEl = document.getElementById('recorded');
+
+function drawGroups(){
+  groupsEl.textContent = '';
+  if (!state.total){
+    var p = document.createElement('p');
+    p.className = 'hint'; p.style.margin = '0';
+    p.textContent = '主持人還沒設定參賽組數。';
+    groupsEl.appendChild(p);
+    return;
+  }
+  for (var i = 1; i <= state.total; i++){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(state.g === i));
+    b.dataset.g = i;
+    b.appendChild(document.createTextNode(i + '號'));
+    var d = state.done[i];
+    if (d){
+      b.className = 'done';
+      var sp = document.createElement('span');
+      sp.className = 'got';
+      sp.textContent = (d.s1 + d.s2 + d.s3) + ' 分';
+      b.appendChild(sp);
+    }
+    if (i > state.openTo) b.disabled = true;
+    groupsEl.appendChild(b);
+  }
+}
+
+function showRecorded(g){
+  var d = state.done[g];
+  document.getElementById('rgNum').textContent = g;
+  document.getElementById('r1').textContent = d.s1;
+  document.getElementById('r2').textContent = d.s2;
+  document.getElementById('r3').textContent = d.s3;
+  document.getElementById('rt').textContent = (d.s1 + d.s2 + d.s3) + ' 分';
+  recordedEl.hidden = false;
+  formEl.hidden = true;
+}
+
+groupsEl.addEventListener('click', function(e){
+  var b = e.target.closest('button'); if (!b || b.disabled) return;
+  state.g = Number(b.dataset.g);
+  drawGroups();
+  msgEl.className = 'msg';
+  if (state.done[state.g]){
+    showRecorded(state.g);
+  } else {
+    state.s1 = state.s2 = state.s3 = 0;
+    drawScales();
+    recordedEl.hidden = true;
+    formEl.hidden = false;
+    checkReady();
+  }
+});
+
+function drawScales(){
+  var boxes = document.querySelectorAll('.scale');
+  for (var i = 0; i < boxes.length; i++){
+    var box = boxes[i], k = box.dataset.k;
+    box.textContent = '';
+    for (var v = 1; v <= 5; v++){
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = String(v);
+      b.setAttribute('aria-pressed', String(state[k] === v));
+      b.dataset.k = k; b.dataset.v = v;
+      box.appendChild(b);
+    }
+  }
+}
+formEl.addEventListener('click', function(e){
+  var b = e.target.closest('.scale button'); if (!b) return;
+  state[b.dataset.k] = Number(b.dataset.v);
+  drawScales(); checkReady();
+});
+function checkReady(){
+  sendEl.disabled = !(state.g && state.s1 && state.s2 && state.s3);
+}
+
+/* ---------- 送出 ---------- */
+sendEl.addEventListener('click', function(){
+  if (sendEl.disabled) return;
+  var g = state.g, s1 = state.s1, s2 = state.s2, s3 = state.s3;
+  sendEl.disabled = true; sendEl.textContent = '送出中…';
+  call({action:'vote', dev:state.dev, g:g, s1:s1, s2:s2, s3:s3}, function(res){
+    sendEl.textContent = '送出評分';
+    if (res && res.ok){
+      state.done[g] = {s1:s1, s2:s2, s3:s3}; save();
+      if (typeof res.openTo === 'number') state.openTo = res.openTo;
+      if (typeof res.total  === 'number') state.total  = res.total;
+      say(g + '號的分數已經記錄：' + (s1 + s2 + s3) + ' 分。', 'ok');
+      drawGroups(); showRecorded(g);
+    } else {
+      say(errText(res && res.err), 'bad');
+      checkReady();
+      if (res && res.err === 'dup'){
+        state.done[g] = {s1:s1, s2:s2, s3:s3}; save(); drawGroups(); showRecorded(g);
+      }
+    }
+  });
+});
+
+/* ---------- 排名 ---------- */
+var rankEl = document.getElementById('rank');
+document.getElementById('refresh').addEventListener('click', function(){
+  rankEl.innerHTML = '<p class="hint" style="margin:0">讀取中…</p>';
+  call({action:'rank'}, function(res){
+    if (!res || !res.ok){
+      rankEl.innerHTML = '<p class="hint" style="margin:0">' + errText(res && res.err) + '</p>'; return;
+    }
+    if (typeof res.openTo === 'number') state.openTo = res.openTo;
+    if (typeof res.total  === 'number') state.total  = res.total;
+    drawGroups();
+    var rows = res.rows || [];
+    if (!rows.length){ rankEl.innerHTML = '<p class="hint" style="margin:0">還沒有任何分數。</p>'; return; }
+    var h = '<table><thead><tr><th>名次</th><th>組別</th><th class="n">票數</th><th class="n">平均</th></tr></thead><tbody>';
+    for (var i = 0; i < rows.length; i++){
+      var r = rows[i];
+      h += '<tr' + (i < 3 ? ' class="top"' : '') + '><td>' + (i + 1) + '</td><td>'
+         + r.g + '號</td><td class="n">' + r.n + '</td><td class="n">' + r.avg.toFixed(1) + '</td></tr>';
+    }
+    h += '</tbody></table>';
+    rankEl.innerHTML = h;
+  });
+});
+
+/* ---------- 啟動 ---------- */
+load();
+call({action:'state'}, function(res){
+  if (res && res.ok){ state.total = res.total || 0; state.openTo = res.openTo || 0; }
+  else say(errText(res && res.err), 'bad');
+  drawGroups(); drawScales();
+});
+})();
+</script>
+</body>
+</html>
