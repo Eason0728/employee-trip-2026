@@ -1,16 +1,18 @@
 /**
- * 歌唱評分後端回測（零依賴，node tests/test-vote-backend.js）
+ * 鼎鼎好聲音｜後端回測（零依賴，node tests/test-vote-backend.js）
  *
  * 直接把 docs/apps-script-vote.gs 讀進來 eval，Google 的 API 全部給 stub。
  * 測的是「將來真的貼到 Apps Script 的那份程式碼」，不是另外抄一份。
+ *
+ * 2026-09-08 全部重寫：資料結構從「組別評分」換成「報名＋對人評分」，
+ * 舊的 54 項全部作廢（openTo／round／total 這些欄位已經不存在）。
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
 const SRC = path.join(__dirname, '..', 'docs', 'apps-script-vote.gs');
-const PW  = 'PASTE_A_PASSWORD_HERE';
-const DEV = 'devaaaaaaaaaaaaaaaaaaaaaa01';
+const PW  = 'PASTE_A_PASSWORD_HERE';       // .gs 裡的預設值，部署前才會換掉
 
 let pass = 0, fail = 0;
 function ok(cond, name, extra) {
@@ -19,225 +21,393 @@ function ok(cond, name, extra) {
 }
 function eq(a, b, name) { ok(a === b, name, `得到 ${JSON.stringify(a)}，預期 ${JSON.stringify(b)}`); }
 
-/* ── Google API stubs ───────────────────────────────────────── */
-function makeEnv() {
-  const store = {};
-  const rows = [];            // 不含表頭
+const dev = n => 'dev' + String(n).padStart(9, '0') + 'xxxxxxxx';
 
-  const sheet = {
-    appendRow: r => rows.push(r),
-    getLastRow: () => rows.length + 1,
-    getRange: (r1, c1, nR, nC) => ({
-      getValues: () => rows.slice(r1 - 2, r1 - 2 + nR).map(r => r.slice(c1 - 1, c1 - 1 + nC)),
-      setNumberFormat: () => {}
-    }),
+/* ══════════ Google API stubs ══════════ */
+function makeSheet() {
+  // rows[0] 是表頭——ensure() 建表時自己 appendRow 進來的，所以列號直接對應索引 r1-1
+  const rows = [];
+  return {
+    rows,
+    appendRow: r => rows.push(r.slice()),
+    getLastRow: () => rows.length,
+    getLastColumn: () => (rows[0] ? rows[0].length : 0),
+    getMaxRows: () => rows.length + 100,
     setFrozenRows: () => {},
-    deleteRows: (start, n) => { rows.splice(start - 2, n); }
+    getRange: (r1, c1, nR, nC) => ({
+      getValues: () => rows.slice(r1 - 1, r1 - 1 + nR).map(r => r.slice(c1 - 1, c1 - 1 + nC)),
+      setNumberFormat: () => {},
+      clearContent: () => { rows.splice(r1 - 1, nR); }
+    })
+  };
+}
+
+function makeEnv() {
+  const store  = {};
+  const sheets = {};                  // 分頁名 → sheet stub（報名／評分紀錄各一份）
+  const book = {
+    getSheetByName: n => sheets[n] || null,
+    insertSheet: n => (sheets[n] = makeSheet()),
+    getId:  () => 'mock-spreadsheet-id',
+    getUrl: () => 'https://docs.google.com/spreadsheets/d/mock/edit'
   };
 
   const env = {
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: k => (k in store ? store[k] : null),
-        setProperty: (k, v) => { store[k] = String(v); }
+        setProperty: (k, v) => { store[k] = String(v); },
+        deleteProperty: k => { delete store[k]; }
       })
     },
-    SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet, insertSheet: () => sheet }) },
-    LockService:    { getScriptLock: () => ({ waitLock: () => true, releaseLock: () => {} }) },
+    SpreadsheetApp: {
+      openById: () => book,
+      create: () => book            // SS_ID 留空時 ss() 會自己開一份
+    },
+    Logger: { log: () => {} },
+    LockService: { getScriptLock: () => ({ waitLock: () => true, releaseLock: () => {} }) },
     ContentService: {
       MimeType: { JAVASCRIPT: 'js', JSON: 'json' },
       createTextOutput: t => ({ _t: t, _m: null, setMimeType(m) { this._m = m; return this; } })
     },
-    console
+    Date, JSON, String, Number, Math, Object, Array, console
   };
-  env.__rows = rows;
+  env.__sheets = sheets;
+  env.__store  = store;
   return env;
 }
 
 function load(env) {
   const code = fs.readFileSync(SRC, 'utf8');
-  const names = Object.keys(env);
+  const names = Object.keys(env).filter(n => !n.startsWith('__'));
   const fn = new Function(...names, code +
-    '\n;return {doGet,route,apiVote,apiRank,apiAdmin,computeRank,countDevices,getSettings};');
+    '\n;return {doGet,doPost,route,apiState,apiSignup,apiList,apiVote,apiRank,apiAdmin,' +
+    'getSettings,signupCount,setup,CRITERIA,MIN_SONGS};');
   return fn(...names.map(n => env[n]));
 }
 
+/** 開一個乾淨的後端；opts 可先把評分打開（預設只開報名，跟正式預設一致） */
 function setup(opts) {
   opts = opts || {};
   const env = makeEnv();
   const api = load(env);
-  api.apiAdmin({
-    pw: PW, op: 'set',
-    total : opts.total  === undefined ? 3 : opts.total,
-    openTo: opts.openTo === undefined ? 3 : opts.openTo,
-    closed: opts.closed ? 1 : 0
-  });
+  if (opts.voteOpen)  api.apiAdmin({ pw: PW, cmd: 'voteOpen' });
+  if (opts.published) api.apiAdmin({ pw: PW, cmd: 'publish' });
   return { env, api };
 }
-const dev = n => 'dev' + String(n).padStart(9, '0') + 'xxxxxxxx';
 
-/* ── 1. JSONP 封裝 ──────────────────────────────────────────── */
+/** 報名一位，回傳後端的回覆 */
+function signup(api, name, songs, d) {
+  return api.apiSignup({ dev: d || dev(1), name, songs: (songs || ['歌一 - 甲', '歌二 - 乙']).join('|') });
+}
+
+/* ══════════ 1. JSONP 封裝 ══════════ */
 {
   const { api } = setup();
-  const out = api.doGet({ parameter: { action: 'state', callback: 'myCb' } });
-  ok(/^myCb\(\{.*\}\);$/.test(out._t), 'JSONP：用 callback 名稱包起來');
-  eq(out._m, 'js', 'JSONP：MIME 是 JAVASCRIPT');
+  const r = api.doGet({ parameter: { action: 'state', callback: 'cb7' } });
+  ok(/^cb7\(/.test(r._t) && /\);$/.test(r._t), 'callback 合法時包成 JSONP');
+  eq(r._m, 'js', 'JSONP 的 MIME 是 JAVASCRIPT');
 
-  const plain = api.doGet({ parameter: { action: 'state' } });
-  ok(plain._t.charAt(0) === '{', '沒給 callback 就回純 JSON');
-  eq(plain._m, 'json', '純 JSON 的 MIME');
+  const bad = api.doGet({ parameter: { action: 'state', callback: 'alert(1)//' } });
+  ok(!/alert/.test(bad._t), 'callback 名稱不合法時不回填（擋注入）');
+  eq(bad._m, 'json', '不合法 callback 退回純 JSON');
 
-  const evil = api.doGet({ parameter: { action: 'state', callback: 'a();alert(1)//' } });
-  ok(evil._t.charAt(0) === '{', 'callback 名稱含非法字元時不注入，退回純 JSON');
+  const none = api.doGet({ parameter: { action: 'state' } });
+  ok(JSON.parse(none._t).ok === true, '沒帶 callback 時回純 JSON');
 
-  eq(JSON.parse(api.doGet({ parameter: { action: 'nope' } })._t).err, 'badaction', '未知 action 回 badaction');
+  eq(api.route({ action: '亂打' }).err, 'badaction', '未知 action 回 badaction');
+  eq(api.route({}).err, 'badaction', '沒帶 action 回 badaction');
+
+  // 例外要被包成 server，不能整支炸掉
+  const boom = api.doGet({ parameter: { action: 'signup', name: 'X', songs: 'a|b', dev: dev(1) } });
+  ok(JSON.parse(boom._t).ok !== undefined, 'doGet 一定回得出 ok 欄位');
 }
 
-/* ── 2. 裝置編號驗證 ────────────────────────────────────────── */
+/* ══════════ 2. 預設狀態 ══════════ */
 {
-  const { api } = setup({ total: 3, openTo: 2 });
-  eq(api.apiVote({ g: 1, s1: 3, s2: 3, s3: 3 }).err, 'nodev', '沒帶裝置編號被擋');
-  eq(api.apiVote({ dev: 'abc', g: 1, s1: 3, s2: 3, s3: 3 }).err, 'nodev', '裝置編號太短被擋');
-  eq(api.apiVote({ dev: 'a'.repeat(65), g: 1, s1: 3, s2: 3, s3: 3 }).err, 'nodev', '裝置編號太長被擋');
-  eq(api.apiVote({ dev: 'bad dev with space!', g: 1, s1: 3, s2: 3, s3: 3 }).err, 'nodev',
-     '裝置編號含非法字元被擋');
-  eq(api.apiVote({ dev: DEV, g: 1, s1: 3, s2: 3, s3: 3 }).ok, true, '合法裝置編號可以投');
+  const { api } = setup();
+  const s = api.apiState();
+  eq(s.signupOpen, true,  '預設開放報名');
+  eq(s.voteOpen,   false, '預設還沒開放評分');
+  eq(s.published,  false, '預設成績未公佈');
+  eq(s.count,      0,     '一開始 0 人報名');
+  eq(s.minSongs,   2,     '最少兩首歌');
+  ok(Array.isArray(s.criteria) && s.criteria.length === 3, '三個評分項目');
+  eq(s.criteria.join('／'), '唱功／感情／炒熱度', '評分項目名稱釘死');
 }
 
-/* ── 3. 組別與分數驗證 ──────────────────────────────────────── */
+/* ══════════ 3. 報名 ══════════ */
 {
-  const { api } = setup({ total: 3, openTo: 2 });
-  eq(api.apiVote({ dev: DEV, g: 3, s1: 3, s2: 3, s3: 3 }).err, 'notopen', '還沒開放的組被擋');
-  eq(api.apiVote({ dev: DEV, g: 9, s1: 3, s2: 3, s3: 3 }).err, 'notopen', '超出總組數被擋');
-  eq(api.apiVote({ dev: DEV, g: 0, s1: 3, s2: 3, s3: 3 }).err, 'notopen', '組別 0 被擋');
-  eq(api.apiVote({ dev: DEV, g: 1, s1: 0, s2: 3, s3: 3 }).err, 'badscore', '分數 0 被擋');
-  eq(api.apiVote({ dev: DEV, g: 1, s1: 6, s2: 3, s3: 3 }).err, 'badscore', '分數 6 被擋');
-  eq(api.apiVote({ dev: DEV, g: 1, s1: 2.5, s2: 3, s3: 3 }).err, 'badscore', '小數分被擋');
-  eq(api.apiVote({ dev: DEV, g: 1, s1: 'x', s2: 3, s3: 3 }).err, 'badscore', '非數字被擋');
+  const { api } = setup();
+  const a = signup(api, '王小明');
+  eq(a.ok, true, '第一位報名成功');
+  eq(a.no, 1,    '第一位是 1 號');
+
+  const b = signup(api, '陳美玲', ['歌三 - 丙', '歌四 - 丁'], dev(2));
+  eq(b.no, 2, '第二位是 2 號');
+  eq(api.signupCount(), 2, '報名人數 2');
+
+  eq(signup(api, '王小明', null, dev(3)).err, 'dupname', '同名擋掉（現場叫錯人很麻煩）');
+  eq(signup(api, '   ',   null, dev(4)).err, 'noname',  '空白名字擋掉');
+  eq(api.apiSignup({ dev: dev(5), name: 'A', songs: '只有一首' }).err, 'fewsongs', '只填一首擋掉');
+  eq(api.apiSignup({ dev: dev(5), name: 'A', songs: '' }).err, 'fewsongs', '沒填歌擋掉');
+  eq(api.apiSignup({ name: 'A', songs: 'a|b' }).err, 'nodev', '沒有裝置編號擋掉');
+
+  // 空字串會被 filter 掉，所以 'a||b' 是兩首不是三首
+  const c = api.apiSignup({ dev: dev(6), name: '空格測試', songs: 'a||b' });
+  eq(c.ok, true, '中間有空段仍算兩首');
+  eq(c.songs.length, 2, '空段被濾掉');
+
+  // 長度上限：名字 20、每首歌 60
+  const long = api.apiSignup({ dev: dev(7), name: 'x'.repeat(50), songs: 'y'.repeat(90) + '|b' });
+  eq(long.name.length, 20, '名字截到 20 字');
+  eq(long.songs[0].length, 60, '歌名截到 60 字');
 }
 
-/* ── 4. 寫入內容 ────────────────────────────────────────────── */
+/* ══════════ 4. 報名關閉 ══════════ */
+{
+  const { api } = setup();
+  api.apiAdmin({ pw: PW, cmd: 'signupClose' });
+  eq(signup(api, '遲到的人').err, 'signupClosed', '關閉後報名被擋');
+  eq(api.signupCount(), 0, '被擋的報名沒有寫進去');
+
+  api.apiAdmin({ pw: PW, cmd: 'signupOpen' });
+  eq(signup(api, '重開之後').ok, true, '重新開放後可以報名');
+}
+
+/* ══════════ 5. 名單 ══════════ */
+{
+  const { api } = setup();
+  signup(api, '甲', ['海闊天空 - Beyond', '倔強 - 五月天']);
+  signup(api, '乙', ['聽海 - 張惠妹', '你要的全拿走 - A-Lin'], dev(2));
+
+  const list = api.apiList().list;
+  eq(list.length, 2, '名單兩筆');
+  eq(list[0].no, 1, '名單帶編號');
+  eq(list[0].name, '甲', '名單帶姓名');
+  eq(list[0].songs.length, 2, '歌曲拆回陣列');
+  eq(list[0].songs[0], '海闊天空 - Beyond', '歌曲內容完整（歌名 - 歌手）');
+  ok(!('dev' in list[0]), '名單不外洩裝置編號');
+
+  eq(api.apiList().list.length, 2, '重複查詢結果一致');
+}
+
+/* ══════════ 6. 評分 ══════════ */
+{
+  const { api } = setup();
+  signup(api, '甲');
+  eq(api.apiVote({ dev: dev(9), no: 1, s1: 5, s2: 5, s3: 5 }).err, 'voteClosed', '未開放時評分被擋');
+
+  api.apiAdmin({ pw: PW, cmd: 'voteOpen' });
+  const v = api.apiVote({ dev: dev(9), no: 1, s1: 5, s2: 4, s3: 3 });
+  eq(v.ok, true, '開放後可以評分');
+  eq(v.sum, 12, '小計＝5+4+3');
+
+  eq(api.apiVote({ dev: dev(9), no: 99, s1: 1, s2: 1, s3: 1 }).err, 'badno', '不存在的編號擋掉');
+  eq(api.apiVote({ dev: dev(9), no: 0,  s1: 1, s2: 1, s3: 1 }).err, 'badno', '編號 0 擋掉');
+  eq(api.apiVote({ no: 1, s1: 1, s2: 1, s3: 1 }).err, 'nodev', '沒有裝置編號擋掉');
+  eq(api.apiVote({ dev: dev(9), no: 1, s1: 6, s2: 3, s3: 3 }).err, 'badscore', '超過 5 分擋掉');
+  eq(api.apiVote({ dev: dev(9), no: 1, s1: 0, s2: 3, s3: 3 }).err, 'badscore', '0 分擋掉');
+  eq(api.apiVote({ dev: dev(9), no: 1, s1: 3, s2: 3 }).err, 'badscore', '少一項擋掉');
+  eq(api.apiVote({ dev: dev(9), no: 1, s1: 'x', s2: 3, s3: 3 }).err, 'badscore', '非數字擋掉');
+
+  api.apiAdmin({ pw: PW, cmd: 'voteClose' });
+  eq(api.apiVote({ dev: dev(10), no: 1, s1: 3, s2: 3, s3: 3 }).err, 'voteClosed', '關閉後評分被擋');
+}
+
+/* ══════════ 7. 計分 ══════════ */
+{
+  const { api } = setup({ voteOpen: true, published: true });
+  signup(api, '甲');
+  signup(api, '乙', null, dev(2));
+  signup(api, '丙', null, dev(3));
+
+  // 甲：三支手機各 12、12、15 → 39/3 = 13
+  api.apiVote({ dev: dev(11), no: 1, s1: 4, s2: 4, s3: 4 });
+  api.apiVote({ dev: dev(12), no: 1, s1: 4, s2: 4, s3: 4 });
+  api.apiVote({ dev: dev(13), no: 1, s1: 5, s2: 5, s3: 5 });
+  // 同一支手機再投一次甲，應該不算
+  api.apiVote({ dev: dev(11), no: 1, s1: 1, s2: 1, s3: 1 });
+  // 乙：一支手機 15
+  api.apiVote({ dev: dev(11), no: 2, s1: 5, s2: 5, s3: 5 });
+
+  const r = api.apiRank();
+  eq(r.published, true, '公佈狀態帶出來');
+  eq(r.voters, 3, '三支手機評過（重複投的不重複計）');
+
+  const byNo = {};
+  r.rank.forEach(x => { byNo[x.no] = x; });
+  eq(byNo[1].votes, 3,  '甲被三支手機評過');
+  eq(byNo[1].total, 39, '甲總分 39（重複那筆沒算進去）');
+  eq(byNo[1].avg,   13, '甲平均 13');
+  eq(byNo[2].votes, 1,  '乙一票');
+  eq(byNo[2].avg,   15, '乙平均 15');
+  eq(byNo[3].votes, 0,  '丙沒人評');
+  eq(byNo[3].avg,   0,  '丙平均 0（不是 NaN）');
+  ok(r.rank.every(x => !('dev' in x)), '排名不外洩裝置編號');
+
+  eq(r.rank[0].no, 2, '平均高的排前面（乙 15 > 甲 13）');
+  eq(r.rank[1].no, 1, '甲第二');
+  eq(r.rank[2].no, 3, '沒人評的墊底');
+}
+
+/* ══════════ 8. 同分怎麼排 ══════════ */
+{
+  const { api } = setup({ voteOpen: true });
+  signup(api, '甲');
+  signup(api, '乙', null, dev(2));
+  signup(api, '丙', null, dev(3));
+
+  // 甲乙同平均 12，甲兩票、乙一票 → 甲在前（比較多人聽過）
+  api.apiVote({ dev: dev(21), no: 1, s1: 4, s2: 4, s3: 4 });
+  api.apiVote({ dev: dev(22), no: 1, s1: 4, s2: 4, s3: 4 });
+  api.apiVote({ dev: dev(21), no: 2, s1: 4, s2: 4, s3: 4 });
+  // 丙也是 12、也是一票 → 與乙全同，編號小的在前
+  api.apiVote({ dev: dev(21), no: 3, s1: 4, s2: 4, s3: 4 });
+
+  const rank = api.apiRank().rank;
+  eq(rank[0].no, 1, '同平均時票多的在前');
+  eq(rank[1].no, 2, '再同分時編號小的在前');
+  eq(rank[2].no, 3, '編號大的在後');
+}
+
+/* ══════════ 9. 平均只留兩位小數 ══════════ */
+{
+  const { api } = setup({ voteOpen: true });
+  signup(api, '甲');
+  api.apiVote({ dev: dev(31), no: 1, s1: 5, s2: 5, s3: 5 });   // 15
+  api.apiVote({ dev: dev(32), no: 1, s1: 5, s2: 5, s3: 4 });   // 14
+  api.apiVote({ dev: dev(33), no: 1, s1: 5, s2: 4, s3: 4 });   // 13
+  const r = api.apiRank().rank[0];
+  eq(r.total, 42, '總分 42');
+  eq(r.avg, 14, '平均 14');
+
+  const { api: api2 } = setup({ voteOpen: true });
+  signup(api2, '乙');
+  api2.apiVote({ dev: dev(41), no: 1, s1: 5, s2: 5, s3: 5 });  // 15
+  api2.apiVote({ dev: dev(42), no: 1, s1: 5, s2: 5, s3: 4 });  // 14
+  api2.apiVote({ dev: dev(43), no: 1, s1: 5, s2: 5, s3: 4 });  // 14
+  eq(api2.apiRank().rank[0].avg, 14.33, '43/3 進位到兩位小數');
+}
+
+/* ══════════ 10. 成績公佈與否 ══════════ */
+{
+  const { api } = setup({ voteOpen: true });
+  signup(api, '甲');
+  api.apiVote({ dev: dev(51), no: 1, s1: 5, s2: 5, s3: 5 });
+
+  eq(api.apiRank().published, false, '沒公佈時 published=false');
+  ok(api.apiRank().voters === 1, '沒公佈時仍回報幾支手機投過（主持人要抓沒投的人）');
+
+  api.apiAdmin({ pw: PW, cmd: 'publish' });
+  eq(api.apiRank().published, true, '公佈後 published=true');
+  api.apiAdmin({ pw: PW, cmd: 'unpublish' });
+  eq(api.apiRank().published, false, '可以收回');
+}
+
+/* ══════════ 11. 主持人指令 ══════════ */
+{
+  const { api } = setup();
+  eq(api.apiAdmin({ pw: '亂打', cmd: 'status' }).err, 'badpw', '密碼錯擋掉');
+  eq(api.apiAdmin({ cmd: 'status' }).err, 'badpw', '沒帶密碼擋掉');
+  eq(api.apiAdmin({ pw: PW, cmd: '亂打' }).err, 'badcmd', '未知指令擋掉');
+
+  const s = api.apiAdmin({ pw: PW, cmd: 'status' });
+  eq(s.ok, true, 'status 通過');
+  ok(s.settings && typeof s.settings.signupOpen === 'boolean', '回傳含 settings');
+  ok(Array.isArray(s.signups), '回傳含報名名單');
+  ok(Array.isArray(s.rank), '回傳含排名');
+
+  eq(api.apiAdmin({ pw: PW, cmd: 'signupClose' }).settings.signupOpen, false, 'signupClose 生效');
+  eq(api.apiAdmin({ pw: PW, cmd: 'signupOpen'  }).settings.signupOpen, true,  'signupOpen 生效');
+  eq(api.apiAdmin({ pw: PW, cmd: 'voteOpen'    }).settings.voteOpen,   true,  'voteOpen 生效');
+  eq(api.apiAdmin({ pw: PW, cmd: 'voteClose'   }).settings.voteOpen,   false, 'voteClose 生效');
+  eq(api.apiAdmin({ pw: PW, cmd: 'publish'     }).settings.published,  true,  'publish 生效');
+  eq(api.apiAdmin({ pw: PW, cmd: 'unpublish'   }).settings.published,  false, 'unpublish 生效');
+}
+
+/* ══════════ 12. 重置 ══════════ */
+{
+  const { api } = setup({ voteOpen: true, published: true });
+  signup(api, '甲');
+  signup(api, '乙', null, dev(2));
+  api.apiVote({ dev: dev(61), no: 1, s1: 5, s2: 5, s3: 5 });
+
+  const after = api.apiAdmin({ pw: PW, cmd: 'reset' });
+  eq(api.signupCount(), 0, 'reset 清掉報名');
+  eq(api.apiRank().rank.length, 0, 'reset 清掉排名');
+  eq(api.apiRank().voters, 0, 'reset 清掉票');
+  eq(after.settings.signupOpen, true,  'reset 後回到預設：報名開');
+  eq(after.settings.voteOpen,   false, 'reset 後回到預設：評分關');
+  eq(after.settings.published,  false, 'reset 後回到預設：成績未公佈');
+
+  // 清空後編號要從 1 重新開始，不能接著舊號碼
+  eq(signup(api, '新的人').no, 1, 'reset 後編號從 1 重來');
+}
+
+/* ══════════ 13. 寫進試算表的樣子 ══════════ */
+{
+  const { env, api } = setup({ voteOpen: true });
+  signup(api, '甲', ['歌一 - 甲手', '歌二 - 乙手']);
+  api.apiVote({ dev: dev(71), no: 1, s1: 5, s2: 4, s3: 3 });
+
+  const S = env.__sheets['報名'], V = env.__sheets['評分紀錄'];
+  ok(S && V, '兩個分頁都建起來了');
+  eq(S.rows[0][0], '時間', '報名表頭第一欄是時間');
+  eq(S.rows.length, 2, '報名：表頭＋一列資料');
+  eq(S.rows[1][2], 1, '報名列第 3 欄是編號');
+  eq(S.rows[1][3], '甲', '報名列第 4 欄是姓名');
+  eq(S.rows[1][4], '歌一 - 甲手 ｜ 歌二 - 乙手', '歌曲用全形直線串起來');
+
+  eq(V.rows.length, 2, '評分：表頭＋一列資料');
+  eq(V.rows[1][2], 1,  '評分列第 3 欄是參賽編號');
+  eq(V.rows[1][6], 12, '評分列最後一欄是小計');
+  eq(V.rows[1].length, 7, '評分列共 7 欄');
+  eq(V.rows[0].join(','), '時間,裝置,參賽編號,唱功,感情,炒熱度,小計', '評分表頭七欄');
+}
+
+/* ══════════ 14. 一票一裝置的邊界 ══════════ */
+{
+  const { api } = setup({ voteOpen: true });
+  signup(api, '甲');
+  signup(api, '乙', null, dev(2));
+
+  // 同一支手機評不同人 → 兩票都算
+  api.apiVote({ dev: dev(81), no: 1, s1: 5, s2: 5, s3: 5 });
+  api.apiVote({ dev: dev(81), no: 2, s1: 3, s2: 3, s3: 3 });
+  const r = api.apiRank();
+  eq(r.voters, 1, '同一支手機評兩個人，只算一支手機');
+  const byNo = {};
+  r.rank.forEach(x => { byNo[x.no] = x; });
+  eq(byNo[1].votes, 1, '甲拿到這支手機的票');
+  eq(byNo[2].votes, 1, '乙也拿到這支手機的票');
+
+  // 同一支手機對同一人投第二次 → 以第一次為準（不是最後一次）
+  api.apiVote({ dev: dev(81), no: 1, s1: 1, s2: 1, s3: 1 });
+  eq(api.apiRank().rank.find(x => x.no === 1).total, 15, '重複投以第一筆為準');
+}
+
+/* ══════════ 15. setup()：試算表自己建 ══════════ */
 {
   const { env, api } = setup();
-  api.apiVote({ dev: DEV, g: 2, s1: 4, s2: 5, s3: 3 });
-  const r = env.__rows[0];
-  eq(r.length, 7, '一列七欄');
-  ok(r[0] instanceof Date, '第 1 欄是時間戳');
-  eq(r[1], DEV, '第 2 欄是裝置編號');
-  eq(r[2], 2, '第 3 欄是組別');
-  eq(r[3], 4, '唱功');
-  eq(r[4], 5, '感情');
-  eq(r[5], 3, '炒熱度');
-  eq(r[6], 12, '小計 = 三項相加');
+  const url = api.setup();
+  ok(/spreadsheets/.test(url), 'setup 回傳試算表網址（執行紀錄看得到）');
+  eq(env.__store.SS_ID, 'mock-spreadsheet-id', '試算表 id 記進指令碼屬性');
+  ok(env.__sheets['報名'] && env.__sheets['評分紀錄'], 'setup 把兩個分頁都建好');
+  eq(env.__sheets['報名'].rows.length, 1, '新分頁只有表頭');
+  api.setup();
+  eq(Object.keys(env.__sheets).length, 2, '重複執行 setup 不會多建分頁');
 }
 
-/* ── 5. 結束評分 ────────────────────────────────────────────── */
+/* ══════════ 16. 參賽者自己也能被評 ══════════ */
 {
-  const { api } = setup({ closed: true });
-  eq(api.apiVote({ dev: DEV, g: 1, s1: 3, s2: 3, s3: 3 }).err, 'closed', '結束後送不出去');
+  const { api } = setup({ voteOpen: true });
+  const me = dev(91);
+  signup(api, '參賽者', null, me);
+  const v = api.apiVote({ dev: me, no: 1, s1: 5, s2: 5, s3: 5 });
+  eq(v.ok, true, '沒有擋自己評自己（現場靠人盯，不在程式擋）');
 }
 
-/* ── 6. 一人一組只算一次：取第一筆 ──────────────────────────── */
-{
-  const { api } = setup();
-  api.apiVote({ dev: dev(1), g: 1, s1: 1, s2: 1, s3: 1 });   // 3 分 ← 只有這筆算數
-  api.apiVote({ dev: dev(1), g: 1, s1: 5, s2: 5, s3: 5 });   // 15 分，清了瀏覽器再投也沒用
-  api.apiVote({ dev: dev(1), g: 1, s1: 5, s2: 5, s3: 5 });   // 再投一次還是沒用
-  api.apiVote({ dev: dev(2), g: 1, s1: 3, s2: 3, s3: 3 });   // 9 分
-  const r = api.computeRank()[0];
-  eq(r.n, 2, '兩支裝置，重複送的不算票');
-  eq(r.avg, 6, '取第一筆：(3+9)/2 = 6，不是 (15+9)/2');
-}
-{
-  // 同一支裝置對「不同組」投票是正常的，不能被誤擋
-  const { api } = setup({ total: 3, openTo: 3 });
-  api.apiVote({ dev: dev(1), g: 1, s1: 1, s2: 1, s3: 1 });
-  api.apiVote({ dev: dev(1), g: 2, s1: 5, s2: 5, s3: 5 });
-  api.apiVote({ dev: dev(1), g: 3, s1: 3, s2: 3, s3: 3 });
-  eq(api.computeRank().length, 3, '同一支手機可以評每一組');
-}
-
-/* ── 7. 全票計入，不去頭去尾（2026-09-07 拿掉） ─────────────── */
-{
-  // 10 票：一票 3 分、一票 15 分、其餘 8 票都是 10 分
-  const { api } = setup();
-  const sets = [[1,1,1],[5,5,5],[4,3,3],[4,3,3],[4,3,3],[4,3,3],[4,3,3],[4,3,3],[4,3,3],[4,3,3]];
-  sets.forEach((s, i) => api.apiVote({ dev: dev(i), g: 1, s1: s[0], s2: s[1], s3: s[2] }));
-  const r = api.computeRank()[0];
-  eq(r.n, 10, '收到 10 票');
-  eq(r.avg, 9.8, '極端值全部計入：(3+15+8×10)/10 = 9.8');
-  ok(!('kept' in r), '不再回傳「採計票數」欄位');
-}
-{
-  const { api } = setup();
-  [[1,1,1],[5,5,5],[3,3,3]].forEach((s, i) =>
-    api.apiVote({ dev: dev(i), g: 1, s1: s[0], s2: s[1], s3: s[2] }));
-  const r = api.computeRank()[0];
-  eq(r.n, 3, '3 票全算');
-  eq(r.avg, 9, '(3+15+9)/3 = 9');
-}
-{
-  // 單一一票也要算得出來（第一組唱完只有幾個人投的情況）
-  const { api } = setup();
-  api.apiVote({ dev: dev(1), g: 1, s1: 5, s2: 4, s3: 3 });
-  const r = api.computeRank()[0];
-  eq(r.n, 1, '只有一票也成立');
-  eq(r.avg, 12, '平均就是那一票的 12 分');
-}
-
-/* ── 8. 排序 ────────────────────────────────────────────────── */
-{
-  const { api } = setup({ total: 3, openTo: 3 });
-  api.apiVote({ dev: dev(1), g: 1, s1: 1, s2: 1, s3: 1 });   // 3
-  api.apiVote({ dev: dev(1), g: 2, s1: 5, s2: 5, s3: 5 });   // 15
-  api.apiVote({ dev: dev(1), g: 3, s1: 3, s2: 3, s3: 3 });   // 9
-  const rows = api.computeRank();
-  eq(rows[0].g, 2, '高分在前');
-  eq(rows[1].g, 3, '中間');
-  eq(rows[2].g, 1, '低分在後');
-}
-
-/* ── 9. 裝置數統計 ──────────────────────────────────────────── */
-{
-  const { api } = setup({ total: 3, openTo: 3 });
-  eq(api.countDevices(), 0, '還沒人投時是 0');
-  api.apiVote({ dev: dev(1), g: 1, s1: 3, s2: 3, s3: 3 });
-  api.apiVote({ dev: dev(1), g: 2, s1: 3, s2: 3, s3: 3 });
-  eq(api.countDevices(), 1, '同一支手機投兩組還是算 1 支');
-  api.apiVote({ dev: dev(2), g: 1, s1: 3, s2: 3, s3: 3 });
-  eq(api.countDevices(), 2, '第二支手機投了就是 2');
-}
-
-/* ── 10. 控制台 ─────────────────────────────────────────────── */
-{
-  const { api } = setup();
-  eq(api.apiAdmin({ pw: 'wrong', op: 'get' }).err, 'badpw', '通行碼錯被擋');
-  eq(api.apiAdmin({ pw: PW, op: 'nosuchop' }).err, 'badop', '未知操作被擋');
-
-  api.apiVote({ dev: DEV, g: 1, s1: 3, s2: 3, s3: 3 });
-  eq(api.computeRank().length, 1, '重置前有分數');
-  api.apiAdmin({ pw: PW, op: 'reset' });
-  eq(api.computeRank().length, 0, '重置後分數清空');
-  eq(api.countDevices(), 0, '重置後裝置數歸零');
-
-  api.apiAdmin({ pw: PW, op: 'set', openTo: 7 });
-  eq(api.getSettings().openTo, 7, 'openTo 存得進去');
-  api.apiAdmin({ pw: PW, op: 'set', openTo: -3 });
-  eq(api.getSettings().openTo, 0, '負數被夾到 0');
-  api.apiAdmin({ pw: PW, op: 'set', round: 2 });
-  eq(api.getSettings().round, 2, 'round 存得進去');
-  ok('devices' in api.apiAdmin({ pw: PW, op: 'get' }), '控制台回傳裝置數');
-}
-
-/* ── 11. 對外 API 不外洩裝置編號 ────────────────────────────── */
-{
-  const { api } = setup();
-  api.apiVote({ dev: DEV, g: 1, s1: 3, s2: 3, s3: 3 });
-  const s = api.doGet({ parameter: { action: 'state' } })._t;
-  const r = api.doGet({ parameter: { action: 'rank'  } })._t;
-  ok(s.indexOf(DEV) < 0, 'state 不外洩裝置編號');
-  ok(r.indexOf(DEV) < 0, 'rank 不外洩裝置編號');
-}
-
-console.log(`\n${pass} passed, ${fail} failed`);
+/* ══════════ 收尾 ══════════ */
+console.log(`\n後端回測：${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

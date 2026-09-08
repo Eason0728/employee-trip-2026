@@ -1,207 +1,512 @@
 /**
- * 歌唱評分投票頁 vote.html 無頭瀏覽器測試
- *   python3 -m http.server 8899 --bind 127.0.0.1 &   （在 repo 根目錄）
- *   node tests/test-vote-ui.js
+ * 鼎鼎好聲音｜前端回測（vote.html ＋ vote-admin.html）
  *
- * 攔截所有 script.google.com 的 JSONP 請求，絕不打真正的端點。
- * 瀏覽器：預設用系統 Chrome，可用 CHROMIUM_PATH 覆寫。
+ *   python3 -m http.server 8899 --bind 127.0.0.1 &   （在 repo 根目錄）
+ *   node tests/test-vote-ui.js                       （換 port 加 PORT=xxxx）
+ *
+ * 攔截所有 script.google.com 的 JSONP 請求，**絕不打真正的端點**；
+ * 假後端就寫在這支裡，回應形狀跟 docs/apps-script-vote.gs 一致。
+ *
+ * 瀏覽器：預設系統 Chrome，可用 CHROMIUM_PATH 覆寫。
+ * playwright 沒裝在專案裡時用 PW_PATH 指到 playwright-core 的位置，例如
+ *   PW_PATH=/tmp/pw/node_modules/playwright-core node tests/test-vote-ui.js
+ *
+ * 2026-09-08 全部重寫：頁面從「選組別評分」換成「報名／評分／成績」三頁，
+ * 舊的 52 項全部作廢（#groups、openTo 這些東西已經不存在）。
  */
-const { chromium } = require('playwright');
+const { chromium } = require(process.env.PW_PATH || 'playwright');
 
-const BASE = 'http://127.0.0.1:8899/vote.html';
-const API  = 'https://script.google.com/macros/s/TESTONLY/exec';
-const EXEC = process.env.CHROMIUM_PATH ||
-             '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const HOST  = 'http://127.0.0.1:' + (process.env.PORT || 8899);   // 換 port 用 PORT=xxxx
+const API   = 'https://script.google.com/macros/s/TESTONLY/exec';
+const EXEC  = process.env.CHROMIUM_PATH ||
+              '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-let failures = 0;
+let failures = 0, passes = 0;
 function check(name, cond, extra) {
-  if (cond) console.log('PASS  ' + name);
-  else { failures++; console.log('FAIL  ' + name + (extra ? '  [' + extra + ']' : '')); }
+  if (cond) { passes++; }
+  else { failures++; console.log('  ✗ ' + name + (extra ? '  → ' + extra : '')); }
+}
+function eq(a, b, name) { check(name, a === b, `得到 ${JSON.stringify(a)}，預期 ${JSON.stringify(b)}`); }
+
+/* ══════════ 假後端：形狀照 apps-script-vote.gs ══════════ */
+function makeServer() {
+  const db = { signups: [], votes: [], set: { signupOpen: true, voteOpen: false, published: false } };
+  const CRIT = ['唱功', '感情', '炒熱度'];
+
+  function rank() {
+    const names = {}, agg = {}, seen = {}, devs = {};
+    db.signups.forEach(s => { names[s.no] = s.name; });
+    db.votes.forEach(v => {
+      const key = v.dev + '#' + v.no;
+      if (seen[key]) return;
+      seen[key] = 1; devs[v.dev] = 1;
+      if (!agg[v.no]) agg[v.no] = { sum: 0, n: 0 };
+      agg[v.no].sum += v.scores.reduce((a, b) => a + b, 0);
+      agg[v.no].n += 1;
+    });
+    const out = Object.keys(names).map(k => {
+      const no = Number(k), a = agg[no] || { sum: 0, n: 0 };
+      return { no, name: names[no], votes: a.n, total: a.sum,
+               avg: a.n ? Math.round(a.sum / a.n * 100) / 100 : 0 };
+    });
+    out.sort((x, y) => y.avg - x.avg || y.votes - x.votes || x.no - y.no);
+    return { rank: out, voters: Object.keys(devs).length };
+  }
+
+  return {
+    db,
+    handle(p) {
+      switch (p.action) {
+        case 'state':
+          return { ok: true, ...db.set, criteria: CRIT, minSongs: 2, count: db.signups.length };
+        case 'signup': {
+          if (!db.set.signupOpen) return { ok: false, err: 'signupClosed' };
+          const name = String(p.name || '').trim();
+          const songs = String(p.songs || '').split('|').map(s => s.trim()).filter(Boolean);
+          if (!name) return { ok: false, err: 'noname' };
+          if (songs.length < 2) return { ok: false, err: 'fewsongs', need: 2 };
+          if (db.signups.some(s => s.name === name)) return { ok: false, err: 'dupname', name };
+          const no = db.signups.length + 1;
+          db.signups.push({ no, dev: p.dev, name, songs });
+          return { ok: true, no, name, songs };
+        }
+        case 'list':
+          return { ok: true, list: db.signups.map(s => ({ no: s.no, name: s.name, songs: s.songs })) };
+        case 'vote': {
+          if (!db.set.voteOpen) return { ok: false, err: 'voteClosed' };
+          const no = Number(p.no);
+          if (!db.signups.some(s => s.no === no)) return { ok: false, err: 'badno' };
+          const v = [1, 2, 3].map(i => Number(p['s' + i]));
+          if (v.some(x => !(x >= 1 && x <= 5))) return { ok: false, err: 'badscore' };
+          db.votes.push({ dev: p.dev, no, scores: v });
+          return { ok: true, no, scores: v, sum: v.reduce((a, b) => a + b, 0) };
+        }
+        case 'rank': {
+          const r = rank();
+          return { ok: true, published: db.set.published, voters: r.voters, rank: r.rank };
+        }
+        case 'admin': {
+          if (String(p.pw || '') !== 'testpw') return { ok: false, err: 'badpw' };
+          const c = String(p.cmd || '');
+          if (c === 'signupOpen')  db.set.signupOpen = true;
+          if (c === 'signupClose') db.set.signupOpen = false;
+          if (c === 'voteOpen')    db.set.voteOpen = true;
+          if (c === 'voteClose')   db.set.voteOpen = false;
+          if (c === 'publish')     db.set.published = true;
+          if (c === 'unpublish')   db.set.published = false;
+          if (c === 'reset') { db.signups = []; db.votes = []; db.set = { signupOpen: true, voteOpen: false, published: false }; }
+          const r = rank();
+          return { ok: true, settings: { ...db.set }, signups: db.signups.map(s => ({ no: s.no, name: s.name, songs: s.songs })),
+                   published: db.set.published, voters: r.voters, rank: r.rank };
+        }
+        default: return { ok: false, err: 'badaction' };
+      }
+    }
+  };
 }
 
 (async () => {
   const browser = await chromium.launch({ executablePath: EXEC });
-  const context = await browser.newContext({ timezoneId: 'Asia/Taipei' });
-  const page = await context.newPage();
 
-  let server = { state: { ok: true, total: 4, openTo: 2, round: 1, closed: false } };
-  let calls = [];
-
-  await page.route('**/script.google.com/**', route => {
-    const p = Object.fromEntries(new URL(route.request().url()).searchParams);
-    calls.push(p);
-    const res = typeof server[p.action] === 'function' ? server[p.action](p) : server[p.action];
-    if (res === 'HANG') { route.abort(); return; }
-    route.fulfill({
-      status: 200,
-      contentType: 'application/javascript; charset=utf-8',
-      body: `${p.callback}(${JSON.stringify(res || { ok: false, err: 'badaction' })});`
+  /** 開一個全新的分頁（等於一支新手機：localStorage 是空的） */
+  async function phone(server, calls, url) {
+    const ctx = await browser.newContext({ timezoneId: 'Asia/Taipei' });
+    const page = await ctx.newPage();
+    await page.route('**/script.google.com/**', route => {
+      const p = Object.fromEntries(new URL(route.request().url()).searchParams);
+      calls.push(p);
+      const res = server.handle(p);
+      route.fulfill({
+        status: 200,
+        contentType: 'application/javascript; charset=utf-8',
+        body: `${p.callback}(${JSON.stringify(res)});`
+      });
     });
-  });
-  await page.addInitScript(api => { window.VOTE_API = api; }, API);
-
-  const groups = () => page.$$eval('#groups button',
-    bs => bs.map(b => ({ t: b.textContent, dis: b.disabled, done: b.className.includes('done'),
-                         sel: b.getAttribute('aria-pressed') === 'true' })));
-  const msg = () => page.$eval('#msg', e => ({ text: e.textContent, cls: e.className }));
-  const store = () => page.evaluate(() => JSON.parse(localStorage.getItem('malaVote2026') || '{}'));
-
-  /* ── 1. 開頁就能用，沒有代碼關卡 ─────────────────────────── */
-  await page.goto(BASE);
-  await page.waitForSelector('#groups button');
-  check('沒有代碼輸入欄，開頁直接可用', (await page.$('#code')) === null);
-  check('進入時打了 action=state', calls.some(c => c.action === 'state'));
-
-  /* ── 2. 裝置編號 ─────────────────────────────────────────── */
-  const s1 = await store();
-  check('第一次開頁就產生裝置編號', !!s1.dev, JSON.stringify(s1));
-  check('裝置編號符合後端規則 8–64 碼', /^[A-Za-z0-9_-]{8,64}$/.test(s1.dev || ''), s1.dev);
-  await page.reload();
-  await page.waitForSelector('#groups button');
-  check('重新整理後裝置編號不變', (await store()).dev === s1.dev);
-
-  /* ── 3. 組別按鈕 ─────────────────────────────────────────── */
-  let g = await groups();
-  check('組別數量 = total', g.length === 4, `得到 ${g.length}`);
-  check('第 1、2 組可按（openTo=2）', !g[0].dis && !g[1].dis);
-  check('第 3、4 組鎖住', g[2].dis && g[3].dis);
-
-  /* ── 4. 送出前的驗證 ─────────────────────────────────────── */
-  check('還沒選組別時評分區藏著', await page.isHidden('#form'));
-  await page.click('#groups button:nth-child(1)');
-  check('選了組別評分區出現', await page.isVisible('#form'));
-  check('未評分的組不顯示唯讀卡', await page.isHidden('#recorded'));
-  check('三項都沒選 → 送出鎖住', await page.isDisabled('#send'));
-
-  await page.click('.scale[data-k=s1] button:nth-child(4)');
-  check('只選 1 項 → 送出仍鎖住', await page.isDisabled('#send'));
-  await page.click('.scale[data-k=s2] button:nth-child(5)');
-  check('只選 2 項 → 送出仍鎖住', await page.isDisabled('#send'));
-  await page.click('.scale[data-k=s3] button:nth-child(3)');
-  check('三項都選 → 送出解鎖', await page.isEnabled('#send'));
-
-  /* ── 5. 送出 ─────────────────────────────────────────────── */
-  server.vote = () => ({ ok: true, total: 4, openTo: 2 });
-  calls = [];
-  await page.click('#send');
-  await page.waitForSelector('#recorded:not([hidden])');
-
-  const v = calls.find(c => c.action === 'vote');
-  check('送出 action=vote', !!v);
-  check('送出帶的是裝置編號、不是代碼', v.dev === s1.dev && v.code === undefined);
-  check('送出帶組別', v.g === '1');
-  check('送出帶三項分數 4/5/3', v.s1 === '4' && v.s2 === '5' && v.s3 === '3');
-
-  const m = await msg();
-  check('成功訊息說「已經記錄」與總分', m.text.includes('已經記錄') && m.text.includes('12 分'), m.text);
-  check('成功訊息是綠色', m.cls.includes('ok'));
-
-  /* ── 6. 送出後顯示紀錄的分數 ─────────────────────────────── */
-  check('送出後評分區收起', await page.isHidden('#form'));
-  check('送出後顯示唯讀紀錄卡', await page.isVisible('#recorded'));
-  const rec = await page.evaluate(() => ({
-    g: document.getElementById('rgNum').textContent,
-    a: document.getElementById('r1').textContent,
-    b: document.getElementById('r2').textContent,
-    c: document.getElementById('r3').textContent,
-    t: document.getElementById('rt').textContent
-  }));
-  check('紀錄卡顯示組別 1', rec.g === '1');
-  check('紀錄卡逐項顯示 4 / 5 / 3', rec.a === '4' && rec.b === '5' && rec.c === '3',
-        JSON.stringify(rec));
-  check('紀錄卡顯示小計 12 分', rec.t === '12 分', rec.t);
-
-  g = await groups();
-  check('投過的組別按鈕標成 done', g[0].done);
-  check('投過的組別按鈕直接顯示分數', g[0].t.includes('12 分'), g[0].t);
-  check('沒投的組別不標 done、不顯示分數', !g[1].done && !g[1].t.includes('分'));
-
-  /* ── 7. 已投的組不能再改 ─────────────────────────────────── */
-  const before = await store();
-  check('已投記錄存進 localStorage',
-        before.done && before.done['1'] &&
-        before.done['1'].s1 === 4 && before.done['1'].s2 === 5 && before.done['1'].s3 === 3,
-        JSON.stringify(before.done));
-
-  await page.click('#groups button:nth-child(2)');   // 先切走
-  check('切到未投的組會回到評分表', await page.isVisible('#form') && await page.isHidden('#recorded'));
-  await page.click('#groups button:nth-child(1)');   // 再切回已投的組
-  check('切回已投的組只給看、不給改', await page.isVisible('#recorded') && await page.isHidden('#form'));
-  check('已投的組看不到評分按鈕', (await page.$$('#form .scale button:visible')).length === 0);
-
-  await page.reload();
-  await page.waitForSelector('#groups button');
-  g = await groups();
-  check('重新整理後仍記得投過第 1 組與分數', g[0].done && g[0].t.includes('12 分'));
-
-  /* ── 8. 伺服器錯誤 ───────────────────────────────────────── */
-  async function sendWith(err) {
-    server.vote = () => ({ ok: false, err });
-    await page.click('#groups button:nth-child(2)');
-    await page.click('.scale[data-k=s1] button:nth-child(1)');
-    await page.click('.scale[data-k=s2] button:nth-child(1)');
-    await page.click('.scale[data-k=s3] button:nth-child(1)');
-    await page.click('#send');
-    await page.waitForFunction(() => /msg show bad/.test(document.getElementById('msg').className));
-    return (await msg()).text;
+    await page.addInitScript(api => { window.VOTE_API = api; }, API);
+    await page.goto(url || (HOST + '/vote.html'));
+    await page.waitForTimeout(250);
+    return { ctx, page };
   }
-  check('notopen 講人話', (await sendWith('notopen')).includes('還沒開放'));
-  check('closed 講人話', (await sendWith('closed')).includes('已經結束'));
-  check('nodev 講人話', (await sendWith('nodev')).includes('重新整理'));
-  check('送出失敗後按鈕解鎖可重送', await page.isEnabled('#send'));
-  check('送出失敗不會誤標成已投', !(await groups())[1].done);
 
-  server.vote = 'HANG';
-  await page.click('#send');
-  await page.waitForFunction(
-    () => /訊號/.test(document.getElementById('msg').textContent), null, { timeout: 8000 });
-  check('連不上時提示檢查訊號', (await msg()).text.includes('訊號'));
+  const tab = (page, name) => page.click(`.tabs button:has-text("${name}")`);
+  const msg = page => page.$eval('#msg', el => el.className.includes('show') ? el.textContent.trim() : '');
 
-  /* ── 9. 排名 ─────────────────────────────────────────────── */
-  server.rank = () => ({ ok: true, total: 4, openTo: 3, rows: [
-    { g: 2, n: 40, avg: 13.25 },
-    { g: 1, n: 40, avg: 11.5 },
-    { g: 3, n: 38, avg: 9.125 },
-    { g: 4, n: 38, avg: 8 }
-  ]});
-  await page.click('#refresh');
-  await page.waitForSelector('#rank table');
-  const rows = await page.$$eval('#rank tbody tr',
-    trs => trs.map(tr => Array.from(tr.cells).map(td => td.textContent)));
-  check('排名列數正確', rows.length === 4);
-  check('第一名是 2 號', rows[0][1] === '2號');
-  check('平均取到小數第一位', rows[0][3] === '13.3', rows[0][3]);
-  check('票數顯示', rows[0][2] === '40');
-  check('前三名標成 top', (await page.$$('#rank tr.top')).length === 3);
-  check('排名區沒有殘留去頭去尾的說明',
-        !(await page.$eval('#rank', e => e.textContent.includes('10%'))));
+  async function fillSignup(page, name, songs) {
+    await page.fill('#name', name);
+    const rows = await page.$$('.song-row');
+    for (let i = 0; i < songs.length && i < rows.length; i++) {
+      await rows[i].$eval('.t', (el, v) => { el.value = v; }, songs[i][0]);
+      await rows[i].$eval('.a', (el, v) => { el.value = v; }, songs[i][1]);
+    }
+    await page.click('#signupBtn');
+    await page.waitForTimeout(400);
+  }
 
-  g = await groups();
-  check('排名回傳的 openTo 會解鎖第 3 組', !g[2].dis);
-  check('第 4 組仍鎖住', g[3].dis);
-  check('重畫組別後仍保留已投分數', g[0].t.includes('12 分'));
+  /* ══════════ 1. 開場狀態 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    const { ctx, page } = await phone(server, calls);
 
-  /* ── 10. JSONP 收尾 ──────────────────────────────────────── */
-  check('JSONP 的全域 callback 用完就刪掉',
-        (await page.evaluate(() => Object.keys(window).filter(k => /^__vcb\d+$/.test(k)))).length === 0);
-  check('JSONP 的 script 標籤用完就移除',
-        (await page.evaluate(
-          () => document.querySelectorAll('script[src*="script.google.com"]').length)) === 0);
+    eq(await page.title(), '鼎鼎好聲音', '頁面標題');
+    check('預設停在報名頁', await page.$eval('#tabSignup', e => e.getAttribute('aria-selected')) === 'true');
+    eq((await page.$$('.song-row')).length, 2, '一開始就有兩個歌曲欄');
+    check('示範模式那條沒出現（已接真後端）',
+      await page.$eval('#demoBar', e => getComputedStyle(e).display) === 'none');
 
-  /* ── 11. 主持人還沒設組數時 ──────────────────────────────── */
-  const p2 = await context.newPage();
-  await p2.addInitScript(api => { window.VOTE_API = api; }, API);   // 不注入的話會掉進示範模式
-  await p2.route('**/script.google.com/**', route => {
-    const p = Object.fromEntries(new URL(route.request().url()).searchParams);
-    route.fulfill({ status: 200, contentType: 'application/javascript; charset=utf-8',
-      body: `${p.callback}(${JSON.stringify({ ok: true, total: 0, openTo: 0 })});` });
-  });
-  await p2.goto(BASE);
-  await p2.waitForFunction(() => /還沒設定/.test(document.getElementById('groups').textContent));
-  check('組數 0 時給人看得懂的說明', true);
-  await p2.close();
+    // 裝置編號：一支手機一個，重整不變
+    const dev1 = await page.evaluate(() => localStorage.getItem('ddgs-dev'));
+    check('第一次開頁就產生裝置編號', !!dev1 && dev1.length > 8);
+    await page.reload(); await page.waitForTimeout(250);
+    eq(await page.evaluate(() => localStorage.getItem('ddgs-dev')), dev1, '重整後裝置編號不變');
+
+    await ctx.close();
+  }
+
+  /* ══════════ 2. 報名的擋門 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    const { ctx, page } = await phone(server, calls);
+
+    await page.click('#signupBtn'); await page.waitForTimeout(300);
+    check('沒填名字擋下來', (await msg(page)).includes('要填名字'));
+    eq(calls.filter(c => c.action === 'signup').length, 0, '擋下來的沒有送出去');
+
+    // 歌名有、歌手沒有 → 現場找不到歌，要擋
+    await page.fill('#name', '甲');
+    await page.$$eval('.song-row .t', els => { els[0].value = '海闊天空'; els[1].value = '倔強'; });
+    await page.$$eval('.song-row .a', els => { els[0].value = 'Beyond'; });
+    await page.click('#signupBtn'); await page.waitForTimeout(300);
+    check('只填歌名沒填歌手擋下來', (await msg(page)).includes('歌名和歌手都要填'));
+    eq(calls.filter(c => c.action === 'signup').length, 0, '半套的也沒送出去');
+
+    // 只填一首完整的 → 不足兩首
+    await page.$$eval('.song-row .t', els => { els[1].value = ''; });
+    await page.click('#signupBtn'); await page.waitForTimeout(300);
+    check('不足兩首擋下來', (await msg(page)).includes('兩首'));
+
+    await ctx.close();
+  }
+
+  /* ══════════ 3. 報名成功 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    const { ctx, page } = await phone(server, calls);
+    await fillSignup(page, '王小明', [['海闊天空', 'Beyond'], ['倔強', '五月天']]);
+
+    check('報名成功訊息', (await msg(page)).includes('1 號'));
+    check('表單收起來', await page.$eval('#signupForm', e => e.hidden));
+    check('顯示報名結果', !(await page.$eval('#signupDone', e => e.hidden)));
+    eq(await page.textContent('#myNo'), '1', '顯示自己的編號');
+    eq(await page.textContent('#myName'), '王小明', '顯示自己的名字');
+    check('歌單兩首都在', (await page.textContent('#mySongs')).includes('海闊天空 - Beyond')
+      && (await page.textContent('#mySongs')).includes('倔強 - 五月天'));
+
+    const sent = calls.find(c => c.action === 'signup');
+    eq(sent.songs, '海闊天空 - Beyond|倔強 - 五月天', '送出的歌曲用直線串起來');
+    check('送出時帶著裝置編號', !!sent.dev && sent.dev.length > 8);
+
+    // 重整後還記得（不必再問伺服器）
+    await page.reload(); await page.waitForTimeout(300);
+    check('重整後仍顯示自己報名好了', !(await page.$eval('#signupDone', e => e.hidden)));
+    eq(await page.textContent('#myNo'), '1', '重整後編號還在');
+
+    await ctx.close();
+  }
+
+  /* ══════════ 4. 報名關閉 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.set.signupOpen = false;
+    const { ctx, page } = await phone(server, calls);
+    await fillSignup(page, '遲到', [['a', 'b'], ['c', 'd']]);
+    check('報名關閉時看得懂為什麼', (await msg(page)).includes('報名已經關閉'));
+    check('表單沒有收起來（可以再試）', !(await page.$eval('#signupForm', e => e.hidden)));
+    await ctx.close();
+  }
+
+  /* ══════════ 5. 同名 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.signups.push({ no: 1, dev: 'x', name: '王小明', songs: ['a', 'b'] });
+    const { ctx, page } = await phone(server, calls);
+    await fillSignup(page, '王小明', [['a', 'b'], ['c', 'd']]);
+    check('同名的看得懂要怎麼辦', (await msg(page)).includes('綽號'));
+    await ctx.close();
+  }
+
+  /* ══════════ 6. 歌曲欄增減 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    const { ctx, page } = await phone(server, calls);
+
+    await page.click('button:has-text("再加一首")');
+    eq((await page.$$('.song-row')).length, 3, '可以加到三首');
+    eq(await page.$eval('.song-row:nth-child(3) .head span', e => e.textContent), '第 3 首', '新的那首編號正確');
+
+    await page.click('.song-row:nth-child(3) .head button');
+    eq((await page.$$('.song-row')).length, 2, '可以刪掉多的');
+
+    await page.click('.song-row:nth-child(1) .head button'); await page.waitForTimeout(200);
+    eq((await page.$$('.song-row')).length, 2, '剩兩首時刪不掉');
+    check('說明為什麼刪不掉', (await msg(page)).includes('至少要留兩首'));
+
+    // 刪中間一首之後編號要重排，不能跳號
+    await page.click('button:has-text("再加一首")');
+    await page.click('.song-row:nth-child(2) .head button');
+    const labels = await page.$$eval('.song-row .head span', els => els.map(e => e.textContent));
+    eq(labels.join(','), '第 1 首,第 2 首', '刪掉中間那首後編號重排');
+
+    await ctx.close();
+  }
+
+  /* ══════════ 7. 評分頁 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.set.voteOpen = true;
+    server.db.signups.push({ no: 1, dev: 'a', name: '王小明', songs: ['海闊天空 - Beyond', '倔強 - 五月天'] });
+    server.db.signups.push({ no: 2, dev: 'b', name: '陳美玲', songs: ['聽海 - 張惠妹', '你要的全拿走 - A-Lin'] });
+
+    const { ctx, page } = await phone(server, calls);
+    await tab(page, '評分'); await page.waitForTimeout(400);
+
+    const people = await page.$$eval('.people .person', bs => bs.map(b => b.textContent));
+    eq(people.length, 2, '名單兩位');
+    check('卡片寫「號選手」不是只有數字', people[0].includes('號選手'));
+    check('卡片有姓名', people[0].includes('王小明'));
+    check('卡片有歌單', people[0].includes('海闊天空 - Beyond'));
+
+    check('還沒選人時不顯示評分表', await page.$eval('#voteForm', e => e.hidden));
+    await page.click('.people .person:nth-child(1)'); await page.waitForTimeout(200);
+    check('選了人才出現評分表', !(await page.$eval('#voteForm', e => e.hidden)));
+    check('評分表標題寫幾號選手＋名字',
+      (await page.textContent('#vTarget')).includes('1 號選手') &&
+      (await page.textContent('#vTarget')).includes('王小明'));
+
+    eq((await page.$$('.crit')).length, 3, '三個評分項目');
+    const crits = await page.$$eval('.crit h3', els => els.map(e => e.textContent));
+    eq(crits.join('／'), '唱功／感情／炒熱度', '評分項目名稱');
+    eq((await page.$$('.crit:nth-child(1) .scale button')).length, 5, '每項五個分數');
+
+    check('三項沒選滿時送不出去', await page.$eval('#sendVote', e => e.disabled));
+    await page.click('.crit:nth-child(1) .scale button:nth-child(5)');
+    await page.click('.crit:nth-child(2) .scale button:nth-child(4)');
+    check('只選兩項還是送不出去', await page.$eval('#sendVote', e => e.disabled));
+    await page.click('.crit:nth-child(3) .scale button:nth-child(3)');
+    check('三項都選才能送', !(await page.$eval('#sendVote', e => e.disabled)));
+
+    await page.click('#sendVote'); await page.waitForTimeout(400);
+    check('送出成功訊息帶小計', (await msg(page)).includes('12'));
+    check('送出後顯示唯讀分數', !(await page.$eval('#voteDone', e => e.hidden)));
+    const recap = await page.$$eval('#recap b', els => els.map(e => e.textContent));
+    eq(recap.join(','), '5,4,3,12', '唯讀分數：三項＋小計');
+
+    const sent = calls.find(c => c.action === 'vote');
+    eq(sent.s1 + ',' + sent.s2 + ',' + sent.s3, '5,4,3', '送出的分數正確');
+    eq(sent.no, '1', '送出的參賽編號正確');
+    check('評分也帶裝置編號', !!sent.dev);
+
+    // 已評過的那位要看得出來
+    await page.click('.ghost:has-text("評下一位")'); await page.waitForTimeout(200);
+    const marks = await page.$$eval('.people .person', bs => bs.map(b => ({
+      done: b.className.includes('done'), txt: b.textContent
+    })));
+    check('評過的卡片標成已評', marks[0].done && marks[0].txt.includes('已評 12'));
+    check('沒評的卡片不標', !marks[1].done);
+
+    // 重新點已評過的人 → 顯示唯讀，不能重投
+    await page.click('.people .person:nth-child(1)'); await page.waitForTimeout(200);
+    check('點已評過的人只給看分數', await page.$eval('#voteForm', e => e.hidden)
+      && !(await page.$eval('#voteDone', e => e.hidden)));
+
+    await ctx.close();
+  }
+
+  /* ══════════ 8. 評分未開放 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['a', 'b'] });
+    const { ctx, page } = await phone(server, calls);
+    await tab(page, '評分'); await page.waitForTimeout(400);
+    await page.click('.people .person:nth-child(1)'); await page.waitForTimeout(200);
+    await page.click('.crit:nth-child(1) .scale button:nth-child(3)');
+    await page.click('.crit:nth-child(2) .scale button:nth-child(3)');
+    await page.click('.crit:nth-child(3) .scale button:nth-child(3)');
+    await page.click('#sendVote'); await page.waitForTimeout(400);
+    check('未開放評分時看得懂', (await msg(page)).includes('還沒開放評分'));
+    await ctx.close();
+  }
+
+  /* ══════════ 9. 名單是空的 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.set.voteOpen = true;
+    const { ctx, page } = await phone(server, calls);
+    await tab(page, '評分'); await page.waitForTimeout(400);
+    check('沒人報名時說清楚', (await page.textContent('#people')).includes('還沒有人報名'));
+    await ctx.close();
+  }
+
+  /* ══════════ 10. 成績頁 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.set.voteOpen = true;
+    server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['a', 'b'] });
+    server.db.signups.push({ no: 2, dev: 'b', name: '乙', songs: ['c', 'd'] });
+    server.db.votes.push({ dev: 'p1', no: 1, scores: [5, 5, 5] });
+    server.db.votes.push({ dev: 'p2', no: 1, scores: [4, 4, 4] });
+    server.db.votes.push({ dev: 'p1', no: 2, scores: [3, 3, 3] });
+
+    const { ctx, page } = await phone(server, calls);
+    await tab(page, '成績'); await page.waitForTimeout(400);
+    check('未公佈時不給看名次', (await page.textContent('#rank')).includes('還沒公佈'));
+    check('未公佈時仍告知幾支手機投過', (await page.textContent('#rankNote')).includes('2 支手機'));
+    check('未公佈時畫面上沒有任何名字',
+      !(await page.textContent('#rank')).includes('甲') && !(await page.textContent('#rank')).includes('乙'));
+
+    server.db.set.published = true;
+    await page.click('.ghost:has-text("查詢成績")'); await page.waitForTimeout(400);
+    const rows = await page.$$eval('.rank .row', rs => rs.map(r => r.textContent));
+    eq(rows.length, 2, '公佈後兩列名次');
+    check('第一名是甲', rows[0].includes('甲'));
+    check('顯示評分人數與總分', rows[0].includes('2 人評分') && rows[0].includes('27'));
+    check('平均取兩位小數', rows[0].includes('13.50'));
+    check('第二名是乙', rows[1].includes('乙'));
+
+    await ctx.close();
+  }
+
+  /* ══════════ 11. 分頁與網址 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    const { ctx, page } = await phone(server, calls);
+    await tab(page, '評分'); await page.waitForTimeout(200);
+    eq(await page.evaluate(() => location.hash), '#vote', '切分頁會寫進網址');
+
+    const { ctx: c2, page: p2 } = await phone(server, calls, HOST + '/vote.html#result');
+    check('帶 #result 直接開成績頁',
+      await p2.$eval('#tabResult', e => e.getAttribute('aria-selected')) === 'true');
+    await c2.close();
+
+    const { ctx: c3, page: p3 } = await phone(server, calls, HOST + '/vote.html#亂打');
+    check('亂打的 hash 退回報名頁',
+      await p3.$eval('#tabSignup', e => e.getAttribute('aria-selected')) === 'true');
+    await c3.close();
+    await ctx.close();
+  }
+
+  /* ══════════ 12. 網路斷掉的時候 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    const ctx = await browser.newContext({ timezoneId: 'Asia/Taipei' });
+    const page = await ctx.newPage();
+    await page.route('**/script.google.com/**', route => route.abort());
+    await page.addInitScript(api => { window.VOTE_API = api; }, API);
+    await page.goto(HOST + '/vote.html');
+    await page.waitForTimeout(250);
+
+    await fillSignup(page, '甲', [['a', 'b'], ['c', 'd']]);
+    await page.waitForTimeout(400);
+    check('連不上時說得清楚', (await msg(page)).includes('連不上'));
+    check('按鈕沒卡在送出中', await page.$eval('#signupBtn', e => e.textContent.trim()) === '送出報名'
+      && !(await page.$eval('#signupBtn', e => e.disabled)));
+    await ctx.close();
+  }
+
+  /* ══════════ 13. 公開 repo 的安全底線 ══════════ */
+  {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    ['vote.html', 'vote-admin.html', 'vote-demo.js'].forEach(f => {
+      const src = fs.readFileSync(path.join(root, f), 'utf8');
+      check(f + ' 沒有真實電話號碼', !/09\d{2}-?\d{3}-?\d{3}/.test(src));
+      check(f + ' 沒有寫死通行碼', !/ADMIN_PW\s*=\s*['"][^'"]{3,}/.test(src));
+    });
+
+    // ⚠ 2026-09-08 踩過：用 sed 把佔位符換成正式網址時，連 DEMO 的比較對象一起換掉了，
+    //    變成 API === '正式網址' 恆為真——示範模式永遠開著，所有人的分數只留在自己手機裡。
+    //    這兩條就是守這件事的。
+    ['vote.html', 'vote-admin.html'].forEach(f => {
+      const src = fs.readFileSync(path.join(root, f), 'utf8');
+      check(f + ' 已接上正式後端', /var API\s+= window\.VOTE_API \|\| 'https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec'/.test(src));
+      check(f + ' 示範模式的判斷對象是 UNSET，沒被網址替換誤傷', /var DEMO\s+= \(API === UNSET\)/.test(src));
+      check(f + ' UNSET 仍是佔位字串', /var UNSET = 'PASTE_APPS_SCRIPT_URL_HERE'/.test(src));
+    });
+
+    // 後端正本在 public repo，通行碼只能是佔位符（真的那組在 deploy-local/）
+    const gs = fs.readFileSync(path.join(root, 'docs', 'apps-script-vote.gs'), 'utf8');
+    check('後端正本的通行碼還是佔位符', /var ADMIN_PW = 'PASTE_A_PASSWORD_HERE'/.test(gs));
+    check('後端正本沒有寫死試算表 id', /var SS_ID    = ''/.test(gs));
+  }
+
+  /* ══════════ 14. 主持人控制台 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['歌一 - 甲手', '歌二 - 乙手'] });
+    server.db.votes.push({ dev: 'p1', no: 1, scores: [5, 4, 3] });
+
+    const { ctx, page } = await phone(server, calls, HOST + '/vote-admin.html');
+
+    check('沒登入前看不到控制項', await page.$eval('#panel', e => e.hidden));
+    await page.fill('#pw', '亂打'); await page.click('#enter'); await page.waitForTimeout(400);
+    check('密碼錯有提示', (await page.textContent('#msg')).includes('通行碼不對'));
+    check('密碼錯進不去', await page.$eval('#panel', e => e.hidden));
+
+    await page.fill('#pw', 'testpw'); await page.click('#enter'); await page.waitForTimeout(400);
+    check('密碼對就進去', !(await page.$eval('#panel', e => e.hidden)));
+    check('進去後把先前的紅字收掉', !(await page.$eval('#msg', e => e.className.includes('show'))));
+
+    // 三段開關：膠囊寫現況、按鈕寫下一步
+    eq(await page.textContent('#pSignup'), '開放中', '報名現況');
+    eq(await page.textContent('#bSignup'), '關閉報名', '報名按鈕寫下一步');
+    eq(await page.textContent('#pVote'), '未開放', '評分現況');
+    eq(await page.textContent('#bVote'), '開放評分', '評分按鈕寫下一步');
+    eq(await page.textContent('#pPub'), '未公佈', '成績現況');
+    eq(await page.textContent('#bPub'), '公佈成績', '成績按鈕寫下一步');
+
+    // 名單與排名
+    eq(await page.textContent('#cnt'), '共 1 位', '報名人數');
+    check('名單有編號姓名歌單', (await page.textContent('#list')).includes('甲')
+      && (await page.textContent('#list')).includes('歌一 - 甲手'));
+    eq(await page.textContent('#devs'), '1', '幾支手機評過');
+    check('排名帶總分與平均', (await page.textContent('#rank')).includes('12.00'));
+
+    // 按下去要送對指令，而且畫面跟著翻面
+    await page.click('#bVote'); await page.waitForTimeout(400);
+    eq(calls.filter(c => c.cmd === 'voteOpen').length, 1, '按開放評分送 voteOpen');
+    eq(await page.textContent('#pVote'), '開放中', '按完狀態翻面');
+    eq(await page.textContent('#bVote'), '關閉評分', '按完按鈕也翻面');
+
+    // 關評分與公佈成績會先問一次
+    page.on('dialog', d => d.accept());
+    await page.click('#bVote'); await page.waitForTimeout(400);
+    eq(calls.filter(c => c.cmd === 'voteClose').length, 1, '確認後才送 voteClose');
+    await page.click('#bPub'); await page.waitForTimeout(400);
+    eq(calls.filter(c => c.cmd === 'publish').length, 1, '確認後才送 publish');
+    eq(await page.textContent('#pPub'), '已公佈', '公佈後狀態正確');
+
+    check('控制台每次送指令都帶通行碼', calls.filter(c => c.action === 'admin').every(c => !!c.pw));
+    check('登入後的指令帶的是對的通行碼',
+      calls.filter(c => c.action === 'admin' && c.cmd !== 'status').every(c => c.pw === 'testpw'));
+
+    await ctx.close();
+  }
+
+  /* ══════════ 15. 控制台的清空要問兩次 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['a', 'b'] });
+    const { ctx, page } = await phone(server, calls, HOST + '/vote-admin.html');
+    await page.fill('#pw', 'testpw'); await page.click('#enter'); await page.waitForTimeout(400);
+
+    let asked = 0;
+    page.on('dialog', d => { asked++; asked === 1 ? d.accept() : d.dismiss(); });
+    await page.click('#reset'); await page.waitForTimeout(400);
+    eq(asked, 2, '清空要確認兩次');
+    eq(calls.filter(c => c.cmd === 'reset').length, 0, '第二次不同意就不清');
+    await ctx.close();
+  }
 
   await browser.close();
-  console.log(failures ? `\n${failures} FAILED` : '\n全部通過');
+  console.log(`\n前端回測：${passes} passed, ${failures} failed`);
   process.exit(failures ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

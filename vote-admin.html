@@ -2,67 +2,96 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>鼎鼎好聲音・主持人控制台</title>
 <style>
+/* 配色與 vote.html 同一套 Duolingo token，只是這頁多了表格與開關 */
 :root{
-  color-scheme: dark;
-  --bg:#12100E; --card:#1B1815; --card2:#231F1A;
-  --line:#332C25; --text:#F2ECE2; --dim:#B4A796; --faint:#7E7365;
-  --gold:#E8C468; --ember:#FF8A3D; --ok:#57AC81; --bad:#E4574A;
+  color-scheme:light;
+  --bg:#ffffff; --card:#ffffff; --card2:#ffffff; --line:#E5E5E5;
+  --text:#3C3C3C; --dim:#777777; --faint:#AFAFAF;
+  --green:#58CC02; --green-dark:#3C8A02;
+  --blue:#1CB0F6;  --blue-dark:#1899D6; --blue-soft:#DDF4FF; --blue-line:#84D8FF;
+  --red:#FF4B4B;   --red-dark:#D43838;  --red-soft:#FFDFE0;
+  --amber:#FFC800; --amber-dark:#E5B300; --amber-soft:#FFF4D9;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text)}
-body{font-family:"PingFang TC","Heiti TC",system-ui,sans-serif;font-size:16px;line-height:1.6;
-     padding:0 16px 60px;max-width:720px;margin:0 auto}
-h1{font-size:21px;margin:22px 0 4px}
+body{font-family:-apple-system,"PingFang TC","Heiti TC",system-ui,sans-serif;
+     font-size:16px;line-height:1.6;padding:0 16px 60px;max-width:720px;margin:0 auto;
+     -webkit-font-smoothing:antialiased}
+h1{font-size:21px;margin:22px 0 4px;font-weight:800;letter-spacing:-.01em;color:var(--green)}
 .sub{color:var(--faint);font-size:13px;margin:0 0 18px}
-h2{font-size:14px;color:var(--dim);letter-spacing:.08em;margin:0 0 12px;font-weight:500}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 16px;margin-bottom:14px}
-button{font-family:inherit;font-size:16px;border-radius:9px;border:1px solid var(--line);
-       background:var(--card2);color:var(--text);padding:12px 16px;cursor:pointer}
-button:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
-.primary{background:var(--ember);border-color:var(--ember);color:#1B1008;font-weight:700}
-.danger{border-color:rgba(228,87,74,.5);color:#F0AAA3}
-input{background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--text);
+h2{font-size:13px;color:var(--dim);letter-spacing:.08em;margin:0 0 12px;font-weight:700}
+.card{background:var(--card);border:2px solid var(--line);border-radius:16px;
+      padding:18px 16px;margin-bottom:14px}
+
+button{font-family:inherit;font-size:16px;font-weight:800;letter-spacing:.6px;
+       border-radius:14px;border:2px solid var(--line);box-shadow:0 2px 0 #E5E5E5;
+       background:#fff;color:var(--text);padding:12px 16px;cursor:pointer}
+button:active{transform:translateY(2px);box-shadow:none}
+button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.go{background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 4px 0 var(--green-dark)}
+.stop{background:var(--red);border-color:var(--red);color:#fff;box-shadow:0 4px 0 var(--red-dark)}
+.danger{border-color:var(--red);color:var(--red);box-shadow:0 2px 0 var(--red-soft)}
+input{background:#fff;border:2px solid var(--line);border-radius:14px;color:var(--text);
       font-size:17px;padding:11px 12px;font-family:ui-monospace,monospace;width:100%}
-input:focus{outline:2px solid var(--ember);outline-offset:1px}
+input:focus{outline:2px solid var(--blue);outline-offset:1px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .row > *{flex:0 0 auto}
 .grow{flex:1 1 120px;min-width:0}
 
-.now{display:flex;align-items:baseline;gap:14px;margin-bottom:16px;flex-wrap:wrap}
-.now .big{font-size:52px;font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums;line-height:1}
+/* 三段開關：一列一個階段，右邊一顆按鈕切它 */
+.stage{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:2px solid var(--line)}
+.stage:last-child{border-bottom:0}
+.stage .what{flex:1;min-width:0}
+.stage .what b{display:block;font-size:16px;font-weight:700}
+.stage .what i{font-style:normal;font-size:12.5px;color:var(--faint)}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:3px 11px;border-radius:999px;
+      border:2px solid var(--line);color:var(--dim);letter-spacing:.04em}
+.pill.on{background:#E8FFD4;border-color:var(--green);color:#417B02}
+.pill.off{background:var(--red-soft);border-color:var(--red);color:#B32020}
+.stage button{font-size:14px;padding:10px 14px}
+
+.now{display:flex;align-items:baseline;gap:14px;margin-bottom:4px;flex-wrap:wrap}
+.now .big{font-size:46px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums;line-height:1}
 .now .cap{font-size:13px;color:var(--faint)}
-.pill{display:inline-block;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
-.pill.live{border-color:rgba(87,172,129,.5);color:#A8DCC2}
-.pill.stop{border-color:rgba(228,87,74,.5);color:#F0AAA3}
 
 table{width:100%;border-collapse:collapse;font-size:15px}
-th,td{text-align:left;padding:9px 8px 9px 0;border-bottom:1px solid var(--line)}
-th{font-size:12px;color:var(--faint);letter-spacing:.08em;font-weight:400}
+th,td{text-align:left;padding:9px 8px 9px 0;border-bottom:2px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--faint);letter-spacing:.08em;font-weight:700}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;font-family:ui-monospace,monospace}
-tr.top td{color:var(--gold);font-weight:600}
+td.no{font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums}
+tr.top td{background:#FFF9E0}
+tr.top td.no{color:#8A6800}
+td .songs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
 
-.msg{border-radius:9px;padding:12px 14px;font-size:15px;margin-bottom:14px;display:none}
+.msg{border-radius:14px;padding:12px 14px;font-size:15px;margin-bottom:14px;display:none;
+     border:2px solid transparent}
 .msg.show{display:block}
-.msg.ok{background:rgba(87,172,129,.12);border:1px solid rgba(87,172,129,.4);color:#A8DCC2}
-.msg.bad{background:rgba(228,87,74,.12);border:1px solid rgba(228,87,74,.4);color:#F0AAA3}
+.msg.ok{background:#D7FFB8;border-color:var(--green);color:#417B02}
+.msg.bad{background:var(--red-soft);border-color:var(--red);color:#EA2B2B}
 .hint{font-size:12.5px;color:var(--faint);line-height:1.55}
 
+#demoBar{background:var(--amber-soft);border:2px solid var(--amber);color:#7A5A00;
+         border-radius:14px;padding:11px 14px;font-size:13.5px;line-height:1.5;margin:14px 0 0}
+
 @media print{
-  :root{--bg:#fff;--card:#fff;--card2:#fff;--line:#999;--text:#000;--dim:#333;--faint:#555}
-  html,body{background:#fff;color:#000}
+  :root{--line:#999;--faint:#555;--dim:#333}
+  body{max-width:none;padding:0}
+  h1{color:#000}
+  .card{border-color:#999;break-inside:avoid}
   .noprint{display:none !important}
+  tr.top td{background:transparent}
 }
 </style>
 </head>
 <body>
 
 <h1>鼎鼎好聲音・控制台</h1>
-<div id="demoBar" style="display:none;background:#3A2A12;border:1px solid #7A5A1E;color:#F0D9A0;
-  border-radius:9px;padding:11px 14px;font-size:13.5px;line-height:1.5;margin:14px 0 0">
-  <b>示範模式</b>　後端網址還沒填，資料只存在這台電腦的瀏覽器裡。
+
+<div id="demoBar" style="display:none">
+  <b>示範模式</b>　後端網址還沒填，資料只存在這台裝置的瀏覽器裡。
   下面的通行碼輸入 <b style="font-family:ui-monospace,monospace">demo</b>。
 </div>
 
@@ -74,81 +103,106 @@ tr.top td{color:var(--gold);font-weight:600}
   <h2>通行碼</h2>
   <div class="row">
     <input type="password" id="pw" class="grow" placeholder="控制台通行碼" autocomplete="off">
-    <button class="primary" id="go">進入</button>
+    <button class="go" id="enter">進入</button>
   </div>
 </section>
 
 <div id="panel" hidden>
 
+  <!-- ══════════ 三段開關 ══════════ -->
   <section class="card noprint">
-    <h2>現在開放評分到</h2>
-    <div class="now">
-      <span class="big" id="openTo">0</span>
-      <span class="cap">／ 共 <b id="total">0</b> 組</span>
-      <span class="pill" id="status">—</span>
+    <h2>現在開到哪</h2>
+
+    <div class="stage">
+      <span class="what"><b>報名</b><i>同仁填名字和想唱的歌</i></span>
+      <span class="pill" id="pSignup">—</span>
+      <button id="bSignup">—</button>
     </div>
-    <div class="row">
-      <button class="primary" id="next">開放下一組 ▸</button>
-      <button id="prev">退回上一組</button>
-      <button class="danger" id="close">結束評分</button>
+
+    <div class="stage">
+      <span class="what"><b>評分</b><i>開了大家才打得了分</i></span>
+      <span class="pill" id="pVote">—</span>
+      <button id="bVote">—</button>
     </div>
-    <p class="hint" style="margin-top:12px">
-      每組唱完就按一次「開放下一組」。還沒開放的組別，同仁的手機按不下去，
-      就算硬送伺服器也會擋掉。
+
+    <div class="stage">
+      <span class="what"><b>成績</b><i>公佈前同仁看不到名次</i></span>
+      <span class="pill" id="pPub">—</span>
+      <button id="bPub">—</button>
+    </div>
+
+    <p class="hint" style="margin-top:14px">
+      流程：開放報名 → 唱之前關掉報名 → 開放評分 → 全部唱完關掉評分 → 公佈成績。
+      評分是對「人」不是對「歌」，開了之後同仁隨時可以評任何一位，不必跟著台上進度切換。
     </p>
   </section>
 
-  <section class="card noprint">
-    <h2>設定</h2>
-    <div class="row">
-      <input type="number" id="setTotal" class="grow" min="0" max="99" placeholder="參賽組數">
-      <button id="saveTotal">存組數</button>
-      <button id="round1">切初賽</button>
-      <button id="round2">切決賽</button>
-    </div>
-    <p class="hint" style="margin-top:12px">
-      切決賽時記得把組數改成 5，並按「重置分數」把初賽的票清掉
-      （初賽成績自己抄下來，清了就沒了）。
-    </p>
-    <div class="row" style="margin-top:12px">
-      <button class="danger" id="reset">重置分數</button>
-    </div>
-  </section>
-
+  <!-- ══════════ 報名名單 ══════════ -->
   <section class="card">
-    <h2 class="noprint">即時排名　<span id="devs" style="color:var(--faint)"></span></h2>
-    <div id="rank"><p class="hint">還沒有分數。</p></div>
-    <p class="hint noprint" style="margin-top:10px">收到的票全部計入。每 5 秒自動更新。</p>
+    <h2 class="noprint">報名名單　<span id="cnt" style="color:var(--faint);font-weight:400"></span></h2>
+    <div id="list"><p class="hint">還沒有人報名。</p></div>
+    <button class="noprint" id="refresh" style="margin-top:12px">重新整理</button>
+    <p class="hint noprint" style="margin-top:10px">
+      叫人上台照這個順序。每人報兩首以上是怕現場點不到歌，唱哪首由參賽者自己決定。
+    </p>
   </section>
 
+  <!-- ══════════ 即時排名 ══════════ -->
+  <section class="card">
+    <h2 class="noprint">即時排名</h2>
+    <div class="now noprint">
+      <span class="big" id="devs">0</span>
+      <span class="cap">支手機評過分</span>
+    </div>
+    <div id="rank"><p class="hint">還沒有分數。</p></div>
+    <p class="hint noprint" style="margin-top:10px">
+      收到的票全部計入，同一支手機對同一個人只算第一次。每 5 秒自動更新。
+      平均分高的在前，同分時評分人數多的在前。
+    </p>
+  </section>
+
+  <!-- ══════════ 危險區 ══════════ -->
+  <section class="card noprint">
+    <h2>重來一輪</h2>
+    <div class="row">
+      <button class="danger" id="reset">清空報名與分數</button>
+    </div>
+    <p class="hint" style="margin-top:12px">
+      按下去報名和分數全沒了，沒有復原。成績要留就先截圖或列印這一頁。
+    </p>
+  </section>
 
 </div>
 
 <script src="vote-demo.js"></script>
 <script>
-(function(){
+(function () {
 'use strict';
 
-var API = window.VOTE_API || 'PASTE_APPS_SCRIPT_URL_HERE';  // window.VOTE_API 只給回測覆寫用
-var DEMO = (API === 'PASTE_APPS_SCRIPT_URL_HERE') && !!window.VOTE_DEMO;
-if (DEMO) { var _db = document.getElementById('demoBar'); if (_db) _db.style.display = 'block'; }
+var UNSET = 'PASTE_APPS_SCRIPT_URL_HERE';          // 「還沒接後端」的標記，換網址時別動它
+var API   = window.VOTE_API || 'https://script.google.com/macros/s/AKfycbwQMUeaML-qtuQc_AtV210iYGzYIdLkIpEZ9btW3l1DGUMtJvjR5NRMpzA0GYPchSxalA/exec';  // ← 換後端只改這一行
+var DEMO  = (API === UNSET) && !!window.VOTE_DEMO;
+if (DEMO) document.getElementById('demoBar').style.display = 'block';
+
 var pw = '', timer = null;
 
+/* ══════════ JSONP（與 vote.html 同一套） ══════════ */
 var seq = 0;
-function call(params, cb){
-  if (DEMO) { var r = window.VOTE_DEMO(params); setTimeout(function(){ cb(r); }, 140); return; }
-  var name = '__acb' + (++seq), done = false;
+function call(params, cb) {
+  if (DEMO) { window.VOTE_DEMO(params, cb, function (e) { cb({ ok: false, err: e }); }); return; }
+  var name = '__acb' + (++seq) + '_' + Date.now().toString(36), done = false;
   var s = document.createElement('script');
-  var t = setTimeout(function(){ finish({ok:false, err:'timeout'}); }, 15000);
-  function finish(res){
-    if (done) return; done = true;
+  var t = setTimeout(function () { finish({ ok: false, err: 'timeout' }); }, 15000);
+  function finish(res) {
+    if (done) return;
+    done = true;
     clearTimeout(t);
-    try { delete window[name]; } catch(e){ window[name] = undefined; }
+    try { delete window[name]; } catch (e) { window[name] = undefined; }
     if (s.parentNode) s.parentNode.removeChild(s);
     cb(res);
   }
-  window[name] = function(res){ finish(res); };
-  s.onerror = function(){ finish({ok:false, err:'network'}); };
+  window[name] = function (res) { finish(res); };
+  s.onerror = function () { finish({ ok: false, err: 'network' }); };
   var q = ['callback=' + name];
   for (var k in params) if (params.hasOwnProperty(k)) {
     q.push(encodeURIComponent(k) + '=' + encodeURIComponent(params[k]));
@@ -157,93 +211,124 @@ function call(params, cb){
   document.head.appendChild(s);
 }
 
+/* ══════════ 訊息 ══════════ */
 var msgEl = document.getElementById('msg'), msgTimer;
-function say(t, kind){
+function say(t, kind) {
   clearTimeout(msgTimer);
   msgEl.textContent = t;
   msgEl.className = 'msg show ' + (kind || 'ok');
-  if (kind !== 'bad') msgTimer = setTimeout(function(){ msgEl.className = 'msg noprint'; }, 3500);
+  if (kind !== 'bad') msgTimer = setTimeout(function () { msgEl.className = 'msg noprint'; }, 3500);
 }
 
-var state = {total:0, openTo:0, round:1, closed:false};
-
-function admin(params, cb){
-  params.action = 'admin'; params.pw = pw;
-  call(params, function(res){
-    if (res && res.ok) render(res);
-    else say(res && res.err === 'badpw' ? '通行碼不對。' : '連不上伺服器，再按一次。', 'bad');
+/* ══════════ 送指令 ══════════ */
+function admin(cmd, cb) {
+  call({ action: 'admin', pw: pw, cmd: cmd || 'status' }, function (res) {
+    if (res && res.ok) { render(res); if (cb) cb(res); return; }
+    if (res && res.err === 'badpw') say('通行碼不對。', 'bad');
+    else say('連不上伺服器，再按一次。', 'bad');
     if (cb) cb(res);
   });
 }
 
-function render(res){
-  state.total  = res.total  || 0;
-  state.openTo = res.openTo || 0;
-  state.round  = res.round  || 1;
-  state.closed = !!res.closed;
-
-  document.getElementById('openTo').textContent = state.openTo;
-  document.getElementById('total').textContent  = state.total;
-  var st = document.getElementById('status');
-  st.textContent = state.closed ? '已結束' : (state.round === 2 ? '決賽進行中' : '初賽進行中');
-  st.className = 'pill ' + (state.closed ? 'stop' : 'live');
-  if (document.activeElement !== document.getElementById('setTotal')){
-    document.getElementById('setTotal').value = state.total;
-  }
-
-  var rows = res.rows || [], rk = document.getElementById('rank');
-  if (!rows.length){ rk.innerHTML = '<p class="hint">還沒有分數。</p>'; }
-  else {
-    var h = '<table><thead><tr><th>名次</th><th>組別</th><th class="n">票數</th>'
-          + '<th class="n">採計</th><th class="n">平均</th></tr></thead><tbody>';
-    for (var i = 0; i < rows.length; i++){
-      var r = rows[i];
-      h += '<tr' + (i < 3 ? ' class="top"' : '') + '><td>' + (i+1) + '</td><td>' + r.g
-         + '號</td><td class="n">' + r.n
-         + '</td><td class="n">' + r.avg.toFixed(2) + '</td></tr>';
-    }
-    rk.innerHTML = h + '</tbody></table>';
-  }
-
-  var dv = document.getElementById('devs');
-  if (dv) dv.textContent = (res.devices || 0) + ' 支手機投過';
+/* ══════════ 畫面 ══════════ */
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
 }
 
-document.getElementById('go').addEventListener('click', function(){
+// 一段開關＝狀態膠囊＋一顆會切換的按鈕。
+// on/off 各自帶「膠囊寫什麼、按鈕寫什麼、按下去送哪個指令」，按鈕永遠寫下一步的動作。
+function stage(id, open, on, off) {
+  var cur = open ? on : off;
+  var p = document.getElementById('p' + id), b = document.getElementById('b' + id);
+  p.textContent = cur.pill;
+  p.className = 'pill ' + (open ? 'on' : 'off');
+  b.textContent = cur.btn;
+  b.className = open ? 'stop' : 'go';
+  b.dataset.cmd = cur.cmd;
+}
+
+function render(res) {
+  var st = res.settings || {};
+  stage('Signup', !!st.signupOpen,
+        { pill: '開放中', btn: '關閉報名', cmd: 'signupClose' },
+        { pill: '已關閉', btn: '開放報名', cmd: 'signupOpen'  });
+  stage('Vote', !!st.voteOpen,
+        { pill: '開放中', btn: '關閉評分', cmd: 'voteClose' },
+        { pill: '未開放', btn: '開放評分', cmd: 'voteOpen'  });
+  stage('Pub', !!st.published,
+        { pill: '已公佈', btn: '收回成績', cmd: 'unpublish' },
+        { pill: '未公佈', btn: '公佈成績', cmd: 'publish'   });
+
+  // 報名名單
+  var list = res.signups || [];
+  document.getElementById('cnt').textContent = list.length ? '共 ' + list.length + ' 位' : '';
+  var box = document.getElementById('list');
+  if (!list.length) {
+    box.innerHTML = '<p class="hint">還沒有人報名。</p>';
+  } else {
+    box.innerHTML = '<table><thead><tr><th class="n">編號</th><th>參賽者與歌單</th></tr></thead><tbody>'
+      + list.map(function (p) {
+          return '<tr><td class="n no">' + p.no + '</td><td>' + esc(p.name)
+            + '<span class="songs">' + esc((p.songs || []).join('　｜　')) + '</span></td></tr>';
+        }).join('')
+      + '</tbody></table>';
+  }
+
+  // 即時排名
+  document.getElementById('devs').textContent = res.voters || 0;
+  var rows = res.rank || [], rk = document.getElementById('rank');
+  if (!rows.length || !rows.some(function (r) { return r.votes; })) {
+    rk.innerHTML = '<p class="hint">還沒有分數。</p>';
+  } else {
+    rk.innerHTML = '<table><thead><tr><th class="n">名次</th><th>參賽者</th>'
+      + '<th class="n">票數</th><th class="n">總分</th><th class="n">平均</th></tr></thead><tbody>'
+      + rows.map(function (r, i) {
+          return '<tr' + (i < 3 ? ' class="top"' : '') + '>'
+            + '<td class="n no">' + (i + 1) + '</td>'
+            + '<td>' + r.no + ' 號　' + esc(r.name) + '</td>'
+            + '<td class="n">' + r.votes + '</td>'
+            + '<td class="n">' + r.total + '</td>'
+            + '<td class="n">' + r.avg.toFixed(2) + '</td></tr>';
+        }).join('')
+      + '</tbody></table>';
+  }
+}
+
+/* ══════════ 事件 ══════════ */
+document.getElementById('enter').addEventListener('click', function () {
   pw = document.getElementById('pw').value;
   if (!pw) return;
-  admin({op:'get'}, function(res){
-    if (res && res.ok){
-      document.getElementById('login').hidden = true;
-      document.getElementById('panel').hidden = false;
-      timer = setInterval(function(){ admin({op:'get'}); }, 5000);
-    }
+  admin('status', function (res) {
+    if (!res || !res.ok) return;
+    msgEl.className = 'msg noprint';        // 進來了就把先前打錯碼的紅字收掉
+    document.getElementById('login').hidden = true;
+    document.getElementById('panel').hidden = false;
+    timer = setInterval(function () { admin('status'); }, 5000);
   });
 });
-document.getElementById('pw').addEventListener('keydown', function(e){
-  if (e.key === 'Enter') document.getElementById('go').click();
+document.getElementById('pw').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') document.getElementById('enter').click();
 });
 
-document.getElementById('next').addEventListener('click', function(){
-  if (state.openTo >= state.total){ say('已經開放到最後一組了。', 'bad'); return; }
-  admin({op:'set', openTo: state.openTo + 1});
+['Signup', 'Vote', 'Pub'].forEach(function (id) {
+  document.getElementById('b' + id).addEventListener('click', function () {
+    var cmd = this.dataset.cmd;
+    if (!cmd) return;
+    // 關掉評分與公佈成績都是會被看見的動作，先問一次
+    if (cmd === 'voteClose' && !confirm('關閉評分？同仁就送不出分數了。')) return;
+    if (cmd === 'publish'   && !confirm('公佈成績？同仁的手機上會立刻看到名次。')) return;
+    admin(cmd, function (res) { if (res && res.ok) say('已更新。'); });
+  });
 });
-document.getElementById('prev').addEventListener('click', function(){
-  if (state.openTo <= 0) return;
-  admin({op:'set', openTo: state.openTo - 1});
-});
-document.getElementById('close').addEventListener('click', function(){
-  if (!confirm('結束評分？之後同仁就送不出分數了。')) return;
-  admin({op:'set', closed: state.closed ? 0 : 1});
-});
-document.getElementById('saveTotal').addEventListener('click', function(){
-  admin({op:'set', total: document.getElementById('setTotal').value}, function(){ say('組數已存。'); });
-});
-document.getElementById('round1').addEventListener('click', function(){ admin({op:'set', round:1}); });
-document.getElementById('round2').addEventListener('click', function(){ admin({op:'set', round:2}); });
-document.getElementById('reset').addEventListener('click', function(){
-  if (!confirm('把所有分數清掉？初賽成績記得先抄下來。')) return;
-  admin({op:'reset'}, function(){ say('分數已清空。'); });
+
+document.getElementById('refresh').addEventListener('click', function () { admin('status'); });
+
+document.getElementById('reset').addEventListener('click', function () {
+  if (!confirm('清空所有報名與分數？沒有復原。')) return;
+  if (!confirm('再確認一次：真的要全部清掉？')) return;
+  admin('reset', function (res) { if (res && res.ok) say('已清空。'); });
 });
 })();
 </script>

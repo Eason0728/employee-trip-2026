@@ -1,122 +1,150 @@
 /**
- * 示範模式的假後端。
+ * 鼎鼎好聲音｜示範後端
+ * ═══════════════════════════════════════════════════
+ * 只在 vote.html 的 API 還是 PASTE_APPS_SCRIPT_URL_HERE 時啟用，
+ * 貼上真網址就自動失效。資料存在這支瀏覽器的 localStorage，不會送出去。
  *
- * 只有在 vote.html / vote-admin.html 的 API 還是 PASTE_APPS_SCRIPT_URL_HERE 時才會啟用，
- * 一旦貼上真的 Apps Script 網址就自動失效。用途是讓人在部署前先把整條流程點過一遍。
- *
- * 資料放在 localStorage，所以同一台電腦上「投票頁」與「控制台」看到的是同一份，
- * 兩個分頁開著可以互相影響（控制台按開放下一組，投票頁重整就解鎖）。
- *
- * 計分邏輯（每個裝置＋組別只取第一筆，全票計入不去頭去尾）刻意跟
- * docs/apps-script-vote.gs 一致，改後端的話這裡也要跟著改。
+ * ⚠ 計分邏輯必須跟 docs/apps-script-vote.gs 一致——改後端要同步改這裡，
+ *   不然示範看到的分數跟正式的不一樣。
  */
 (function () {
-  'use strict';
+  var KEY = 'ddgs-demo-db';
+  var CRITERIA = ['唱功', '感情', '炒熱度'];
+  var MIN_SONGS = 2;
 
-  var KEY = 'malaVoteDemo';
-  var PW  = 'demo';
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || fresh(); }
+    catch (e) { return fresh(); }
+  }
+  function fresh() {
+    return { signups: [], votes: [], settings: { signupOpen: true, voteOpen: true, published: false } };
+  }
+  function save(db) { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
 
-  function load() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } }
-  function save(d) { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (e) {} }
-
-  function seed() {
-    var d = { total: 6, openTo: 2, round: 1, closed: false, votes: [] };
-
-    // 先塞兩組的假票，排名一打開就有東西可看
-    for (var g = 1; g <= 2; g++) {
-      var base = (g === 1) ? 11 : 12.5;
-      for (var j = 1; j < 42; j++) {
-        var t = Math.round(base + (Math.random() - 0.5) * 5);
-        d.votes.push({ dev: 'seeddev' + j, g: g, tot: Math.max(3, Math.min(15, t)) });
-      }
-    }
-    // 一筆極高、一筆極低，看看極端值長什麼樣（現在全部計入）
-    d.votes.push({ dev: 'seeddev90', g: 1, tot: 15 });
-    d.votes.push({ dev: 'seeddev91', g: 1, tot: 3 });
-    save(d);
-    return d;
+  function rank(db) {
+    var names = {}, agg = {}, seen = {}, devs = {};
+    db.signups.forEach(function (s) { names[s.no] = s.name; });
+    db.votes.forEach(function (v) {
+      var key = v.dev + '#' + v.no;
+      if (seen[key]) return;                    // 同裝置對同一人只取第一筆
+      seen[key] = 1;
+      devs[v.dev] = 1;
+      if (!agg[v.no]) agg[v.no] = { sum: 0, n: 0 };
+      agg[v.no].sum += v.scores.reduce(function (a, b) { return a + b; }, 0);
+      agg[v.no].n += 1;
+    });
+    var out = Object.keys(names).map(function (k) {
+      var no = Number(k), a = agg[no] || { sum: 0, n: 0 };
+      return { no: no, name: names[no], votes: a.n, total: a.sum,
+               avg: a.n ? Math.round(a.sum / a.n * 100) / 100 : 0 };
+    });
+    out.sort(function (x, y) { return y.avg - x.avg || y.votes - x.votes || x.no - y.no; });
+    return { rank: out, voters: Object.keys(devs).length };
   }
 
-  function db() { return load() || seed(); }
+  // 模擬網路延遲，讓「送出中…」這類狀態看得到
+  function reply(done, res) { setTimeout(function () { done(res); }, 260); }
 
-  function rank(d) {
-    // 一人一組只算一次：取第一筆
-    var first = {};
-    for (var i = 0; i < d.votes.length; i++) {
-      var v = d.votes[i], key = v.dev + '|' + v.g;
-      if (!first.hasOwnProperty(key)) first[key] = v;
-    }
-    var byGroup = {};
-    for (var k in first) {
-      if (!first.hasOwnProperty(k)) continue;
-      var r = first[k];
-      (byGroup[r.g] = byGroup[r.g] || []).push(r.tot);
-    }
-    var out = [];
-    for (var gs in byGroup) {
-      if (!byGroup.hasOwnProperty(gs)) continue;
-      var arr = byGroup[gs];
-      var sum = 0;
-      for (var j = 0; j < arr.length; j++) sum += arr[j];
-      out.push({ g: Number(gs), n: arr.length, avg: sum / arr.length });
-    }
-    out.sort(function (a, b) { return b.avg - a.avg || a.g - b.g; });
-    return out;
-  }
+  window.VOTE_DEMO = function (p, done, fail) {
+    var db = load();
+    var st = db.settings;
 
-  function countDevices(d) {
-    var seen = {}, n = 0;
-    for (var i = 0; i < d.votes.length; i++) {
-      if (!seen[d.votes[i].dev]) { seen[d.votes[i].dev] = 1; n++; }
-    }
-    return n;
-  }
+    switch (p.action) {
+      case 'state':
+        return reply(done, { ok: true, signupOpen: st.signupOpen, voteOpen: st.voteOpen,
+                             published: st.published, criteria: CRITERIA,
+                             minSongs: MIN_SONGS, count: db.signups.length });
 
-  window.VOTE_DEMO = function (p) {
-    var d = db();
-    var action = String(p.action || '');
-
-    if (action === 'state') {
-      return { ok: true, total: d.total, openTo: d.openTo, round: d.round, closed: d.closed };
-    }
-
-    if (action === 'rank') {
-      return { ok: true, total: d.total, openTo: d.openTo, round: d.round, rows: rank(d) };
-    }
-
-    if (action === 'vote') {
-      if (d.closed) return { ok: false, err: 'closed' };
-      var dev = String(p.dev || '');
-      if (!/^[A-Za-z0-9_-]{8,64}$/.test(dev)) return { ok: false, err: 'nodev' };
-      var g = Number(p.g);
-      if (!(g >= 1 && g <= d.total) || g > d.openTo) return { ok: false, err: 'notopen' };
-      var s = [Number(p.s1), Number(p.s2), Number(p.s3)];
-      for (var i = 0; i < 3; i++) {
-        if (!(s[i] >= 1 && s[i] <= 5) || s[i] !== Math.round(s[i])) return { ok: false, err: 'badscore' };
+      case 'signup': {
+        if (!st.signupOpen) return reply(done, { ok: false, err: 'signupClosed' });
+        var name = String(p.name || '').trim();
+        var songs = String(p.songs || '').split('|')
+                      .map(function (x) { return x.trim(); })
+                      .filter(function (x) { return x; });
+        if (!name) return reply(done, { ok: false, err: 'noname' });
+        if (songs.length < MIN_SONGS) return reply(done, { ok: false, err: 'fewsongs', need: MIN_SONGS });
+        if (db.signups.some(function (s) { return s.name === name; })) {
+          return reply(done, { ok: false, err: 'dupname', name: name });
+        }
+        var no = db.signups.length + 1;
+        db.signups.push({ no: no, dev: p.dev, name: name, songs: songs });
+        save(db);
+        return reply(done, { ok: true, no: no, name: name, songs: songs });
       }
-      d.votes.push({ dev: dev, g: g, tot: s[0] + s[1] + s[2] });
-      save(d);
-      return { ok: true, total: d.total, openTo: d.openTo };
-    }
 
-    if (action === 'admin') {
-      if (String(p.pw || '') !== PW) return { ok: false, err: 'badpw' };
-      var op = String(p.op || '');
-      if (op === 'set') {
-        if (p.total  !== undefined) d.total  = Math.max(0, Number(p.total)  || 0);
-        if (p.openTo !== undefined) d.openTo = Math.max(0, Number(p.openTo) || 0);
-        if (p.round  !== undefined) d.round  = Math.max(1, Number(p.round)  || 1);
-        if (p.closed !== undefined) d.closed = String(p.closed) === '1';
-      } else if (op === 'reset') {
-        d.votes = [];
-      } else if (op !== 'get') {
-        return { ok: false, err: 'badop' };
+      case 'list':
+        return reply(done, { ok: true, list: db.signups.map(function (s) {
+          return { no: s.no, name: s.name, songs: s.songs };
+        }) });
+
+      case 'vote': {
+        if (!st.voteOpen) return reply(done, { ok: false, err: 'voteClosed' });
+        var no = Number(p.no);
+        if (!db.signups.some(function (s) { return s.no === no; })) {
+          return reply(done, { ok: false, err: 'badno' });
+        }
+        var v = CRITERIA.map(function (_, i) { return Number(p['s' + (i + 1)]); });
+        if (v.some(function (x) { return !(x >= 1 && x <= 5); })) {
+          return reply(done, { ok: false, err: 'badscore' });
+        }
+        db.votes.push({ dev: p.dev, no: no, scores: v });
+        save(db);
+        return reply(done, { ok: true, no: no, scores: v,
+                             sum: v.reduce(function (a, b) { return a + b; }, 0) });
       }
-      save(d);
-      return { ok: true, total: d.total, openTo: d.openTo, round: d.round,
-               closed: d.closed, rows: rank(d), devices: countDevices(d) };
-    }
 
-    return { ok: false, err: 'badaction' };
+      case 'rank': {
+        var r = rank(db);
+        return reply(done, { ok: true, published: st.published, voters: r.voters, rank: r.rank });
+      }
+
+      case 'admin': {
+        // 正式版 .gs 會比對 ADMIN_PW，示範模式固定 demo，登入流程才測得到
+        if (String(p.pw || '') !== 'demo') return reply(done, { ok: false, err: 'badpw' });
+        var cmd = String(p.cmd || '');
+        if (cmd === 'signupOpen')  st.signupOpen = true;
+        if (cmd === 'signupClose') st.signupOpen = false;
+        if (cmd === 'voteOpen')    st.voteOpen = true;
+        if (cmd === 'voteClose')   st.voteOpen = false;
+        if (cmd === 'publish')     st.published = true;
+        if (cmd === 'unpublish')   st.published = false;
+        if (cmd === 'reset')       { db = fresh(); }
+        save(db);
+        var rr = rank(db);
+        return reply(done, { ok: true, settings: db.settings, signups: db.signups,
+                             published: db.settings.published, voters: rr.voters, rank: rr.rank });
+      }
+
+      default:
+        return reply(done, { ok: false, err: 'badaction' });
+    }
+  };
+
+  /* 示範模式的小工具：塞假資料、切換主持人開關，方便一個人測完整流程 */
+  window.VOTE_DEMO_SEED = function () {
+    var db = fresh();
+    [['王小明', ['海闊天空 - Beyond', '倔強 - 五月天']],
+     ['陳美玲', ['聽海 - 張惠妹', '你要的全拿走 - A-Lin']],
+     ['林大偉', ['志明與春嬌 - 五月天', '愛拚才會贏 - 葉啟田']],
+     ['張雅婷', ['小幸運 - 田馥甄', '說散就散 - JC']]
+    ].forEach(function (x, i) {
+      db.signups.push({ no: i + 1, dev: 'seed', name: x[0], songs: x[1] });
+    });
+    // 三支假手機各評前兩位，讓成績頁有東西看
+    ['p1', 'p2', 'p3'].forEach(function (d, k) {
+      [1, 2].forEach(function (no) {
+        db.votes.push({ dev: d, no: no, scores: [3 + (k % 3), 4, 3 + ((k + no) % 3)] });
+      });
+    });
+    save(db);
+    location.reload();
+  };
+  window.VOTE_DEMO_ADMIN = function (cmd) {
+    window.VOTE_DEMO({ action: 'admin', cmd: cmd }, function () { location.reload(); });
+  };
+  window.VOTE_DEMO_CLEAR = function () {
+    try { localStorage.removeItem(KEY); localStorage.removeItem('ddgs-mine');
+          localStorage.removeItem('ddgs-voted'); } catch (e) {}
+    location.reload();
   };
 })();

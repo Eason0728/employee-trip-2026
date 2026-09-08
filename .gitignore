@@ -1,0 +1,3 @@
+
+# 部署用的祕密（通行碼等），這個 repo 是 public，絕不能進版控
+deploy-local/

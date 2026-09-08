@@ -1,38 +1,40 @@
 /**
- * 鼎鼎好聲音・現場評分後端
- * 2026 員旅 9/14 晚間活動用。
+ * 鼎鼎好聲音｜報名 ＋ 評分 ＋ 成績　後端（2026-09-08 改版）
+ * ═══════════════════════════════════════════════════════════
  *
- * ⚠️ 這是一支「獨立的」Apps Script 專案，跟報名表 / 補報名 / 法代資料那支
- *    （docs/apps-script.gs）完全無關，也不共用試算表。
- *    刻意分開，是為了不去動出發前還在服務的報名後端。
+ * 【安裝】只要做一次
+ *  1. 程式推上去之後，在編輯器執行一次 `setup()`
+ *     ——它會自己開一份試算表、建好兩個分頁，並跳出 Google 的授權同意畫面。
+ *     **這一步一定要人工做**：clasp push／deploy 都不會觸發授權，
+ *     沒授權的話同仁打開頁面只會拿到 403。
+ *  2. 執行紀錄會印出試算表網址，點進去就看得到報名與評分的原始資料。
+ *  3. 部署成網頁應用程式：執行身分「我自己」、誰可以存取「任何人」
+ *     ——後者一定要選，不然同仁打不開。
+ *  4. 之後改程式一律「管理部署作業 → 編輯 → 版本選新版本」重新部署同一個 ID，
+ *     **不要新增部署作業**，那會換網址、前端就斷了。
  *
- * ── 安裝步驟 ───────────────────────────────────────────────
- * 1. 開一個新的 Google 試算表，命名「2026員旅_歌唱評分」，
- *    從網址列複製它的 ID（/d/ 和 /edit 中間那一長串），填進下面 SS_ID。
- * 2. script.google.com → 新增專案 → 把這整份貼上取代全部程式碼。
- * 3. 改下面兩行：SS_ID、ADMIN_PW（主持人控制台的通行碼，自己設一組）。
- * 4. 部署 → 新增部署作業 → 類型「網頁應用程式」
- *      執行身分：我
- *      擁有存取權的使用者：**所有人**  ← 一定要選這個，同仁才不用登入 Google
- *    → 部署 → 複製網址。
- * 5. 把那個網址貼進 vote.html 與 vote-admin.html 的 API 變數。
- *
- * ⚠️ 之後每次改這支程式，要「管理部署作業 → 編輯 → 版本選新版本 → 部署」，
- *    **不要按「新增部署作業」**，那會產生新網址、前端打的還是舊的。
- *
- * ── 一人一票怎麼做到的（2026-09-07 改版，原本是發代碼紙條）──────
- * 每支手機第一次打開投票頁時自己產生一組裝置編號存在瀏覽器裡，之後每次送分都帶著它。
- * **寫入時不檢查重複**（要檢查就得每票讀一次整張表，60 人同時送會塞爆），
- * 改成**計分時每個「裝置＋組別」只取第一筆**。
- * 效果一樣是一人一組只有一次有效投票，而且寫入路徑維持最快。
- * 前端送出後也會鎖住該組、只顯示已記錄的分數。
+ * 【設計取捨】
+ *  · 全部走 JSONP（GET）——前端要知道成功／重複／未開放，no-cors 讀不到回應。
+ *  · 零輪詢：60 支手機同時輪詢會打爆 Apps Script（同時執行上限約 30）。
+ *    名單與成績都是使用者自己按才抓。
+ *  · 一人一票＝綁瀏覽器：每支手機第一次開頁自己產生裝置編號存 localStorage。
+ *    **寫入時不查重複**（查就得每票讀整張表），改成計分時
+ *    每個「裝置＋參賽者」只取第一筆。擋得住誤投、擋不住無痕視窗。
+ *  · 評分對「人」不對「歌」：報名填 2 首是怕現場設備沒有，唱哪首參賽者自己選。
  */
 
-var SS_ID    = 'PASTE_SPREADSHEET_ID_HERE';
+// 試算表不必先開好：留空的話 setup() 會自己建一份，id 記在指令碼屬性裡。
+var SS_ID    = '';
+// ⚠ 這份程式在 public repo，通行碼是部署時才填進去的（deploy-local/ 有一份，不進版控）。
 var ADMIN_PW = 'PASTE_A_PASSWORD_HERE';
 
-var SHEET   = '評分紀錄';
-var HEADERS = ['時間', '裝置', '組別', '唱功', '感情', '炒熱度', '小計'];
+var SHEET_S  = '報名';
+var SHEET_V  = '評分紀錄';
+var HEAD_S   = ['時間', '裝置', '編號', '姓名', '歌曲'];
+var HEAD_V   = ['時間', '裝置', '參賽編號', '唱功', '感情', '炒熱度', '小計'];
+
+var CRITERIA = ['唱功', '感情', '炒熱度'];   // 各 1–5 分
+var MIN_SONGS = 2;                           // 報名至少幾首歌
 
 /* ══════════ 進入點 ══════════ */
 
@@ -59,11 +61,13 @@ function doPost(e) { return doGet(e); }
 
 function route(p) {
   switch (String(p.action || '')) {
-    case 'state': return apiState();
-    case 'vote' : return apiVote(p);
-    case 'rank' : return apiRank();
-    case 'admin': return apiAdmin(p);
-    default     : return { ok: false, err: 'badaction' };
+    case 'state' : return apiState();
+    case 'signup': return apiSignup(p);
+    case 'list'  : return apiList();
+    case 'vote'  : return apiVote(p);
+    case 'rank'  : return apiRank();
+    case 'admin' : return apiAdmin(p);
+    default      : return { ok: false, err: 'badaction' };
   }
 }
 
@@ -74,142 +78,214 @@ function props() { return PropertiesService.getScriptProperties(); }
 function getSettings() {
   var p = props();
   return {
-    total : Number(p.getProperty('total')  || 0),   // 參賽組數
-    openTo: Number(p.getProperty('openTo') || 0),   // 已開放評分到第幾組
-    round : Number(p.getProperty('round')  || 1),   // 1=初賽 2=決賽
-    closed: p.getProperty('closed') === '1'
+    signupOpen: p.getProperty('signupOpen') !== '0',   // 預設開放報名
+    voteOpen  : p.getProperty('voteOpen')   === '1',   // 預設還沒開放評分
+    published : p.getProperty('published')  === '1'    // 成績是否已公佈
   };
 }
 
-/* ══════════ 對外 API ══════════ */
-
 function apiState() {
   var s = getSettings();
-  return { ok: true, total: s.total, openTo: s.openTo, round: s.round, closed: s.closed };
+  s.ok = true;
+  s.criteria = CRITERIA;
+  s.minSongs = MIN_SONGS;
+  s.count = signupCount();
+  return s;
 }
 
-function apiVote(p) {
-  var s = getSettings();
-  if (s.closed) return { ok: false, err: 'closed' };
+/* ══════════ 報名 ══════════ */
 
-  var dev = String(p.dev || '');
-  if (!/^[A-Za-z0-9_-]{8,64}$/.test(dev)) return { ok: false, err: 'nodev' };
+function apiSignup(p) {
+  if (!getSettings().signupOpen) return { ok: false, err: 'signupClosed' };
 
-  var g = Number(p.g);
-  if (!(g >= 1 && g <= s.total)) return { ok: false, err: 'notopen' };
-  if (g > s.openTo)              return { ok: false, err: 'notopen' };
+  var dev  = String(p.dev  || '').slice(0, 40);
+  var name = String(p.name || '').trim().slice(0, 20);
+  // 歌曲用 | 串起來傳，避免多個參數難處理
+  var songs = String(p.songs || '').split('|')
+                .map(function (x) { return x.trim().slice(0, 60); })
+                .filter(function (x) { return x; });
 
-  var v = [Number(p.s1), Number(p.s2), Number(p.s3)];
-  for (var i = 0; i < 3; i++) {
-    if (!(v[i] >= 1 && v[i] <= 5) || v[i] !== Math.round(v[i])) {
-      return { ok: false, err: 'badscore' };
-    }
-  }
+  if (!dev)  return { ok: false, err: 'nodev' };
+  if (!name) return { ok: false, err: 'noname' };
+  if (songs.length < MIN_SONGS) return { ok: false, err: 'fewsongs', need: MIN_SONGS };
 
-  // 這裡刻意不檢查重複——檢查就得讀整張表，60 人同時送會塞爆。
-  // 重複的票在 computeRank() 被擋掉（每個裝置＋組別只取第一筆）。
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(20000); } catch (e) { return { ok: false, err: 'busy' }; }
+  try { lock.waitLock(8000); } catch (e) { return { ok: false, err: 'busy' }; }
   try {
-    sheet().appendRow([new Date(), dev, g, v[0], v[1], v[2], v[0] + v[1] + v[2]]);
+    var sh = sheetS();
+    var last = sh.getLastRow();
+    // 同名不給重複報（現場叫錯人很麻煩）
+    if (last > 1) {
+      var names = sh.getRange(2, 4, last - 1, 1).getValues();
+      for (var i = 0; i < names.length; i++) {
+        if (String(names[i][0]).trim() === name) {
+          return { ok: false, err: 'dupname', name: name };
+        }
+      }
+    }
+    var no = last;                              // 標題列佔 1，所以 last 就是下一個編號
+    sh.appendRow([new Date(), dev, no, name, songs.join(' ｜ ')]);
+    return { ok: true, no: no, name: name, songs: songs };
   } finally {
     lock.releaseLock();
   }
-  return { ok: true, total: s.total, openTo: s.openTo };
 }
+
+function apiList() {
+  var sh = sheetS();
+  var last = sh.getLastRow();
+  if (last < 2) return { ok: true, list: [] };
+  var rows = sh.getRange(2, 3, last - 1, 3).getValues();   // 編號 姓名 歌曲
+  var list = rows.map(function (r) {
+    return {
+      no: Number(r[0]),
+      name: String(r[1]),
+      songs: String(r[2]).split('｜').map(function (x) { return x.trim(); })
+                          .filter(function (x) { return x; })
+    };
+  });
+  return { ok: true, list: list };
+}
+
+function signupCount() {
+  var sh = sheetS();
+  return Math.max(0, sh.getLastRow() - 1);
+}
+
+/* ══════════ 評分 ══════════ */
+
+function apiVote(p) {
+  var st = getSettings();
+  if (!st.voteOpen) return { ok: false, err: 'voteClosed' };
+
+  var dev = String(p.dev || '').slice(0, 40);
+  var no  = Number(p.no);
+  var v   = CRITERIA.map(function (_, i) { return Number(p['s' + (i + 1)]); });
+
+  if (!dev) return { ok: false, err: 'nodev' };
+  if (!(no >= 1 && no <= signupCount())) return { ok: false, err: 'badno' };
+  for (var i = 0; i < v.length; i++) {
+    if (!(v[i] >= 1 && v[i] <= 5)) return { ok: false, err: 'badscore' };
+  }
+
+  var sum = v.reduce(function (a, b) { return a + b; }, 0);
+  // 不查重複——查就得整張表讀一次，60 人同時送會塞爆。計分時每個裝置只取第一筆。
+  sheetV().appendRow([new Date(), dev, no].concat(v).concat([sum]));
+  return { ok: true, no: no, scores: v, sum: sum };
+}
+
+/* ══════════ 成績 ══════════ */
 
 function apiRank() {
-  var s = getSettings();
-  return { ok: true, total: s.total, openTo: s.openTo, round: s.round, rows: computeRank() };
-}
+  var st = getSettings();
+  var names = {};
+  apiList().list.forEach(function (x) { names[x.no] = x.name; });
 
-function computeRank() {
-  var sh = sheet();
+  var sh = sheetV();
   var last = sh.getLastRow();
-  if (last < 2) return [];
+  var agg = {};      // no → { sum, n }
+  var seen = {};     // 裝置+編號 → 已計過
+  var devs = {};
 
-  var rows = sh.getRange(2, 2, last - 1, 6).getValues();  // 裝置 組別 唱功 感情 炒熱度 小計
-
-  // 一人一組只算一次：**取第一筆**，後面重複送的一律不算
-  var first = {};
-  for (var i = 0; i < rows.length; i++) {
-    var dev = String(rows[i][0]), g = Number(rows[i][1]), tot = Number(rows[i][5]);
-    if (!dev || !g || !(tot >= 3 && tot <= 15)) continue;
-    var key = dev + '|' + g;
-    if (!first.hasOwnProperty(key)) first[key] = { g: g, tot: tot };
+  if (last > 1) {
+    var rows = sh.getRange(2, 2, last - 1, 6).getValues();  // 裝置 編號 三項 小計
+    rows.forEach(function (r) {
+      var dev = String(r[0]), no = Number(r[1]), sum = Number(r[5]);
+      var key = dev + '#' + no;
+      if (seen[key]) return;          // 同一裝置對同一人只取第一筆
+      seen[key] = 1;
+      devs[dev] = 1;
+      if (!agg[no]) agg[no] = { sum: 0, n: 0 };
+      agg[no].sum += sum;
+      agg[no].n   += 1;
+    });
   }
 
-  var byGroup = {};
-  for (var k in first) {
-    if (!first.hasOwnProperty(k)) continue;
-    var r = first[k];
-    (byGroup[r.g] = byGroup[r.g] || []).push(r.tot);
-  }
+  var rank = Object.keys(names).map(function (k) {
+    var no = Number(k), a = agg[no] || { sum: 0, n: 0 };
+    return {
+      no: no, name: names[no], votes: a.n,
+      total: a.sum,
+      avg: a.n ? Math.round(a.sum / a.n * 100) / 100 : 0
+    };
+  });
+  // 平均高的在前；同分時票多的在前（比較多人聽過）
+  rank.sort(function (x, y) { return y.avg - x.avg || y.votes - x.votes || x.no - y.no; });
 
-  // 收到的票全部計入，不做去頭去尾（2026-09-07 Eason 決定拿掉）。
-  // 原本砍最高最低各 10%，只擋得住 6 人以內的順手互挺，
-  // 擋不了「沒在聽就亂給分」這個真正會發生的問題，效益不足以換取解釋成本。
-  var out = [];
-  for (var gs in byGroup) {
-    if (!byGroup.hasOwnProperty(gs)) continue;
-    var arr = byGroup[gs];
-    var sum = 0;
-    for (var j = 0; j < arr.length; j++) sum += arr[j];
-    out.push({ g: Number(gs), n: arr.length, avg: sum / arr.length });
-  }
-
-  out.sort(function (a, b) { return b.avg - a.avg || a.g - b.g; });
-  return out;
+  return { ok: true, published: st.published, voters: Object.keys(devs).length, rank: rank };
 }
 
-/* ══════════ 主持人控制台 ══════════ */
+/* ══════════ 主持人 ══════════ */
 
 function apiAdmin(p) {
   if (String(p.pw || '') !== ADMIN_PW) return { ok: false, err: 'badpw' };
   var pr = props();
-  var op = String(p.op || '');
+  var cmd = String(p.cmd || '');
 
-  if (op === 'set') {
-    if (p.total  !== undefined) pr.setProperty('total',  String(Math.max(0, Number(p.total)  || 0)));
-    if (p.openTo !== undefined) pr.setProperty('openTo', String(Math.max(0, Number(p.openTo) || 0)));
-    if (p.round  !== undefined) pr.setProperty('round',  String(Math.max(1, Number(p.round)  || 1)));
-    if (p.closed !== undefined) pr.setProperty('closed', String(p.closed) === '1' ? '1' : '0');
-  } else if (op === 'reset') {
-    var sh = sheet();
-    if (sh.getLastRow() > 1) sh.deleteRows(2, sh.getLastRow() - 1);
-  } else if (op !== 'get') {
-    return { ok: false, err: 'badop' };
+  switch (cmd) {
+    case 'signupOpen' : pr.setProperty('signupOpen', '1'); break;
+    case 'signupClose': pr.setProperty('signupOpen', '0'); break;
+    case 'voteOpen'   : pr.setProperty('voteOpen',   '1'); break;
+    case 'voteClose'  : pr.setProperty('voteOpen',   '0'); break;
+    case 'publish'    : pr.setProperty('published',  '1'); break;
+    case 'unpublish'  : pr.setProperty('published',  '0'); break;
+    case 'reset':
+      // 清掉所有報名與評分，設定歸零。現場重來一輪才用，按下去沒有復原。
+      pr.deleteProperty('signupOpen');
+      pr.deleteProperty('voteOpen');
+      pr.deleteProperty('published');
+      [SHEET_S, SHEET_V].forEach(function (n) {
+        var sh = ss().getSheetByName(n);
+        if (sh && sh.getLastRow() > 1) {
+          sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent();
+        }
+      });
+      break;
+    case 'status': break;
+    default: return { ok: false, err: 'badcmd' };
   }
-
-  var s = getSettings();
-  return { ok: true, total: s.total, openTo: s.openTo, round: s.round, closed: s.closed,
-           rows: computeRank(), devices: countDevices() };
-}
-
-// 有幾支手機投過票——主持人用來抓「還有多少人沒投」
-function countDevices() {
-  var sh = sheet();
-  var last = sh.getLastRow();
-  if (last < 2) return 0;
-  var rows = sh.getRange(2, 2, last - 1, 1).getValues();
-  var seen = {}, n = 0;
-  for (var i = 0; i < rows.length; i++) {
-    var d = String(rows[i][0]);
-    if (d && !seen[d]) { seen[d] = 1; n++; }
-  }
-  return n;
+  var out = apiRank();
+  out.settings = getSettings();
+  out.signups  = apiList().list;
+  return out;
 }
 
 /* ══════════ 試算表 ══════════ */
 
-function sheet() {
-  var ss = SpreadsheetApp.openById(SS_ID);
-  var sh = ss.getSheetByName(SHEET);
+/**
+ * 部署後由擁有者在編輯器執行一次：建試算表與分頁，並觸發授權同意畫面。
+ * 執行紀錄會印出試算表網址。重複執行是安全的（已經有就不會再建）。
+ */
+function setup() {
+  sheetS();
+  sheetV();
+  var url = ss().getUrl();
+  Logger.log('試算表：' + url);
+  return url;
+}
+
+function ss() {
+  var id = SS_ID || props().getProperty('SS_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  var s = SpreadsheetApp.create('鼎鼎好聲音｜報名與評分');
+  props().setProperty('SS_ID', s.getId());
+  return s;
+}
+
+function sheetS() { return ensure(SHEET_S, HEAD_S, 2); }   // 裝置在第 2 欄
+function sheetV() { return ensure(SHEET_V, HEAD_V, 2); }
+
+function ensure(name, headers, textCol) {
+  var s = ss();
+  var sh = s.getSheetByName(name);
   if (!sh) {
-    sh = ss.insertSheet(SHEET);
-    sh.appendRow(HEADERS);
+    sh = s.insertSheet(name);
+    sh.appendRow(headers);
     sh.setFrozenRows(1);
-    sh.getRange('B:B').setNumberFormat('@');   // 裝置編號當文字
+    if (textCol) {
+      // 裝置編號當文字，不然像 1e5 這種會被當數字
+      sh.getRange(1, textCol, sh.getMaxRows(), 1).setNumberFormat('@');
+    }
   }
   return sh;
 }
