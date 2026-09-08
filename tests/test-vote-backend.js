@@ -82,7 +82,7 @@ function load(env) {
   const names = Object.keys(env).filter(n => !n.startsWith('__'));
   const fn = new Function(...names, code +
     '\n;return {doGet,doPost,route,apiState,apiSignup,apiList,apiVote,apiRank,apiAdmin,' +
-    'getSettings,signupCount,setup,CRITERIA,MIN_SONGS};');
+    'getSettings,signupCount,setup,computeRank,CRITERIA,MIN_SONGS};');
   return fn(...names.map(n => env[n]));
 }
 
@@ -249,6 +249,8 @@ function signup(api, name, songs, d) {
   eq(r.rank[0].no, 2, '平均高的排前面（乙 15 > 甲 13）');
   eq(r.rank[1].no, 1, '甲第二');
   eq(r.rank[2].no, 3, '沒人評的墊底');
+  eq(JSON.stringify(r.rank), JSON.stringify(api.computeRank().rank),
+     '公佈後同仁看到的排名與主持人看到的完全一致');
 }
 
 /* ══════════ 8. 同分怎麼排 ══════════ */
@@ -265,7 +267,7 @@ function signup(api, name, songs, d) {
   // 丙也是 12、也是一票 → 與乙全同，編號小的在前
   api.apiVote({ dev: dev(21), no: 3, s1: 4, s2: 4, s3: 4 });
 
-  const rank = api.apiRank().rank;
+  const rank = api.computeRank().rank;      // 測算分本身，跟公佈與否無關
   eq(rank[0].no, 1, '同平均時票多的在前');
   eq(rank[1].no, 2, '再同分時編號小的在前');
   eq(rank[2].no, 3, '編號大的在後');
@@ -278,7 +280,7 @@ function signup(api, name, songs, d) {
   api.apiVote({ dev: dev(31), no: 1, s1: 5, s2: 5, s3: 5 });   // 15
   api.apiVote({ dev: dev(32), no: 1, s1: 5, s2: 5, s3: 4 });   // 14
   api.apiVote({ dev: dev(33), no: 1, s1: 5, s2: 4, s3: 4 });   // 13
-  const r = api.apiRank().rank[0];
+  const r = api.computeRank().rank[0];
   eq(r.total, 42, '總分 42');
   eq(r.avg, 14, '平均 14');
 
@@ -287,22 +289,39 @@ function signup(api, name, songs, d) {
   api2.apiVote({ dev: dev(41), no: 1, s1: 5, s2: 5, s3: 5 });  // 15
   api2.apiVote({ dev: dev(42), no: 1, s1: 5, s2: 5, s3: 4 });  // 14
   api2.apiVote({ dev: dev(43), no: 1, s1: 5, s2: 5, s3: 4 });  // 14
-  eq(api2.apiRank().rank[0].avg, 14.33, '43/3 進位到兩位小數');
+  eq(api2.computeRank().rank[0].avg, 14.33, '43/3 進位到兩位小數');
 }
 
 /* ══════════ 10. 成績公佈與否 ══════════ */
 {
   const { api } = setup({ voteOpen: true });
   signup(api, '甲');
+  signup(api, '乙', null, dev(2));
   api.apiVote({ dev: dev(51), no: 1, s1: 5, s2: 5, s3: 5 });
 
-  eq(api.apiRank().published, false, '沒公佈時 published=false');
-  ok(api.apiRank().voters === 1, '沒公佈時仍回報幾支手機投過（主持人要抓沒投的人）');
+  // ⚠ 只在前端隱藏不夠——改網址打 ?action=rank 就看光了，後端要真的擋
+  const before = api.apiRank();
+  eq(before.published, false, '沒公佈時 published=false');
+  eq(before.rank.length, 0, '沒公佈時後端不送出任何名次');
+  eq(before.voters, 1, '沒公佈時仍回報幾支手機投過（主持人要抓沒投的人）');
+  ok(JSON.stringify(before).indexOf('甲') < 0, '沒公佈時連參賽者姓名都不外流');
+
+  // 但主持人（有通行碼）在公佈前就要看得到即時排名
+  const admin = api.apiAdmin({ pw: PW, cmd: 'status' });
+  eq(admin.published, false, '主持人看得到目前還沒公佈');
+  eq(admin.rank.length, 2, '主持人不論公佈與否都拿得到完整排名');
+  eq(admin.rank[0].total, 15, '主持人看得到分數');
 
   api.apiAdmin({ pw: PW, cmd: 'publish' });
-  eq(api.apiRank().published, true, '公佈後 published=true');
+  const after = api.apiRank();
+  eq(after.published, true, '公佈後 published=true');
+  eq(after.rank.length, 2, '公佈後同仁才拿得到名次');
+  eq(after.rank[0].total, 15, '公佈後分數正確');
+
   api.apiAdmin({ pw: PW, cmd: 'unpublish' });
-  eq(api.apiRank().published, false, '可以收回');
+  const back = api.apiRank();
+  eq(back.published, false, '可以收回');
+  eq(back.rank.length, 0, '收回後名次又被擋住');
 }
 
 /* ══════════ 11. 主持人指令 ══════════ */
@@ -335,8 +354,8 @@ function signup(api, name, songs, d) {
 
   const after = api.apiAdmin({ pw: PW, cmd: 'reset' });
   eq(api.signupCount(), 0, 'reset 清掉報名');
-  eq(api.apiRank().rank.length, 0, 'reset 清掉排名');
-  eq(api.apiRank().voters, 0, 'reset 清掉票');
+  eq(api.computeRank().rank.length, 0, 'reset 清掉排名');
+  eq(api.computeRank().voters, 0, 'reset 清掉票');
   eq(after.settings.signupOpen, true,  'reset 後回到預設：報名開');
   eq(after.settings.voteOpen,   false, 'reset 後回到預設：評分關');
   eq(after.settings.published,  false, 'reset 後回到預設：成績未公佈');
@@ -375,7 +394,7 @@ function signup(api, name, songs, d) {
   // 同一支手機評不同人 → 兩票都算
   api.apiVote({ dev: dev(81), no: 1, s1: 5, s2: 5, s3: 5 });
   api.apiVote({ dev: dev(81), no: 2, s1: 3, s2: 3, s3: 3 });
-  const r = api.apiRank();
+  const r = api.computeRank();
   eq(r.voters, 1, '同一支手機評兩個人，只算一支手機');
   const byNo = {};
   r.rank.forEach(x => { byNo[x.no] = x; });
@@ -384,7 +403,7 @@ function signup(api, name, songs, d) {
 
   // 同一支手機對同一人投第二次 → 以第一次為準（不是最後一次）
   api.apiVote({ dev: dev(81), no: 1, s1: 1, s2: 1, s3: 1 });
-  eq(api.apiRank().rank.find(x => x.no === 1).total, 15, '重複投以第一筆為準');
+  eq(api.computeRank().rank.find(x => x.no === 1).total, 15, '重複投以第一筆為準');
 }
 
 /* ══════════ 15. setup()：試算表自己建 ══════════ */

@@ -176,8 +176,22 @@ function apiVote(p) {
 
 /* ══════════ 成績 ══════════ */
 
+/**
+ * 同仁看的成績：**沒公佈就不把名次送出去**。
+ * 只在前端隱藏是不夠的——任何人把網址改成 ?action=rank 就看光了，
+ * 頒獎前被提前知道結果會出事（2026-09-09 實測發現）。
+ * voters 照樣回：那不洩漏名次，而前端要顯示「已經有幾支手機評過分」。
+ */
 function apiRank() {
   var st = getSettings();
+  var full = computeRank();
+  return st.published
+    ? { ok: true, published: true,  voters: full.voters, rank: full.rank }
+    : { ok: true, published: false, voters: full.voters, rank: [] };
+}
+
+/** 真正算分的地方；主持人（apiAdmin，要通行碼）不論公佈與否都拿完整結果 */
+function computeRank() {
   var names = {};
   apiList().list.forEach(function (x) { names[x.no] = x.name; });
 
@@ -212,7 +226,7 @@ function apiRank() {
   // 平均高的在前；同分時票多的在前（比較多人聽過）
   rank.sort(function (x, y) { return y.avg - x.avg || y.votes - x.votes || x.no - y.no; });
 
-  return { ok: true, published: st.published, voters: Object.keys(devs).length, rank: rank };
+  return { voters: Object.keys(devs).length, rank: rank };
 }
 
 /* ══════════ 主持人 ══════════ */
@@ -244,10 +258,13 @@ function apiAdmin(p) {
     case 'status': break;
     default: return { ok: false, err: 'badcmd' };
   }
-  var out = apiRank();
-  out.settings = getSettings();
-  out.signups  = apiList().list;
-  return out;
+  // 主持人走 computeRank：他要在公佈前就看得到即時排名
+  var full = computeRank();
+  var st2  = getSettings();
+  return {
+    ok: true, published: st2.published, settings: st2,
+    voters: full.voters, rank: full.rank, signups: apiList().list
+  };
 }
 
 /* ══════════ 試算表 ══════════ */
