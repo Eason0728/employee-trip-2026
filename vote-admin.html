@@ -192,7 +192,8 @@ function call(params, cb) {
   if (DEMO) { window.VOTE_DEMO(params, cb, function (e) { cb({ ok: false, err: e }); }); return; }
   var name = '__acb' + (++seq) + '_' + Date.now().toString(36), done = false;
   var s = document.createElement('script');
-  var t = setTimeout(function () { finish({ ok: false, err: 'timeout' }); }, 15000);
+  // 同 vote.html：Apps Script 慢的時候要 20 秒才回
+  var t = setTimeout(function () { finish({ ok: false, err: 'timeout' }); }, 30000);
   function finish(res) {
     if (done) return;
     done = true;

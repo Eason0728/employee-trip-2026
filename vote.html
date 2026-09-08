@@ -293,7 +293,9 @@ var seq = 0;
 function call(params, done, fail) {
   if (DEMO) { window.VOTE_DEMO(params, done, fail); return; }
   var cb = 'cb' + (++seq) + '_' + Date.now().toString(36);
-  var timer = setTimeout(function () { cleanup(); fail && fail('timeout'); }, 15000);
+  // Apps Script 實測回應 2～20 秒都有（Google 的 /exec 轉址時快時慢），
+  // 15 秒會把其實成功的請求誤判成逾時，同仁就會一直重按。
+  var timer = setTimeout(function () { cleanup(); fail && fail('timeout'); }, 30000);
   function cleanup() {
     clearTimeout(timer);
     try { delete window[cb]; } catch (e) { window[cb] = undefined; }
@@ -323,13 +325,13 @@ function hush() { clearTimeout(msgTimer); msgEl.className = 'msg'; }
 var ERR = {
   signupClosed: '報名已經關閉了，找主持人。',
   voteClosed  : '主持人還沒開放評分，等一下再試。',
-  dupname     : '這個名字已經有人報過了，加個綽號或找主持人。',
+  dupname     : '這個名字已經報過了。如果剛才你按過送出，那多半就是你自己——按下面「重新整理名單」確認。真的同名就加個綽號。',
   fewsongs    : '至少要填兩首完整的歌（歌名＋歌手）。',
   noname      : '要填名字。',
   badno       : '找不到這位參賽者，重新整理名單試試。',
   badscore    : '三項都要打分數。',
   busy        : '剛好很多人在送，等三秒再按一次。',
-  timeout     : '網路有點慢，再按一次。',
+  timeout     : '等太久了。可能其實已經送出去——按下面「重新整理名單」看有沒有你，沒有再按一次。',
   network     : '連不上，檢查網路後再試一次。',
   server      : '伺服器出錯了，跟主持人說一聲。'
 };
