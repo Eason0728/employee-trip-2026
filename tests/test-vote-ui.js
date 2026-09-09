@@ -396,6 +396,11 @@ function makeServer() {
       await p2.$eval('#tabResult', e => e.getAttribute('aria-selected')) === 'true');
     await c2.close();
 
+    const { ctx: cv, page: pv } = await phone(server, calls, HOST + '/vote.html#vote');
+    check('帶 #vote 直接開評分頁（主持人頁的返回連結就是這樣走）',
+      await pv.$eval('#tabVote', e => e.getAttribute('aria-selected')) === 'true');
+    await cv.close();
+
     const { ctx: c3, page: p3 } = await phone(server, calls, HOST + '/vote.html#亂打');
     check('亂打的 hash 退回報名頁',
       await p3.$eval('#tabSignup', e => e.getAttribute('aria-selected')) === 'true');
@@ -477,8 +482,10 @@ function makeServer() {
     const { ctx, page } = await phone(server, calls, HOST + '/vote-admin.html');
 
     check('沒登入前看不到控制項', await page.$eval('#panel', e => e.hidden));
-    eq(await page.$eval('.sub a', e => e.getAttribute('href')), 'vote.html',
-       '同仁誤點 logo 進來時回得去');
+    eq(await page.$eval('.sub a', e => e.getAttribute('href')), 'vote.html#vote',
+       '頂部連結回到評分頁');
+    eq(await page.$eval('.back-btn', e => e.getAttribute('href')), 'vote.html#vote',
+       '頁尾也有一個回評分頁的按鈕（看完排名不必捲回最上面）');
     await page.fill('#pw', '亂打'); await page.click('#enter'); await page.waitForTimeout(400);
     check('密碼錯有提示', (await page.textContent('#msg')).includes('通行碼不對'));
     check('密碼錯進不去', await page.$eval('#panel', e => e.hidden));

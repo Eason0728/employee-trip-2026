@@ -72,6 +72,12 @@ td .songs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
 .msg.ok{background:#D7FFB8;border-color:var(--green);color:#417B02}
 .msg.bad{background:var(--red-soft);border-color:var(--red);color:#EA2B2B}
 .hint{font-size:12.5px;color:var(--faint);line-height:1.55}
+.back{color:var(--blue);font-weight:700}
+.back-btn{display:block;text-align:center;text-decoration:none;
+  font-size:15px;font-weight:800;letter-spacing:.6px;color:var(--blue);
+  border:2px solid var(--line);border-radius:14px;box-shadow:0 2px 0 #E5E5E5;
+  padding:13px 16px;background:#fff}
+.back-btn:active{transform:translateY(2px);box-shadow:none}
 
 
 @media print{
@@ -89,7 +95,7 @@ td .songs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
 <h1>鼎鼎好聲音・控制台</h1>
 
 
-<p class="sub noprint">只有主持人開這一頁。<a href="vote.html" style="color:var(--blue)">回報名與評分</a></p>
+<p class="sub noprint">只有主持人開這一頁。<a class="back" href="vote.html#vote">回評分頁</a></p>
 
 <div id="msg" class="msg noprint"></div>
 
@@ -165,6 +171,9 @@ td .songs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
       按下去報名和分數全沒了，沒有復原。成績要留就先截圖或列印這一頁。
     </p>
   </section>
+
+  <!-- 看完排名時人在頁尾，這裡也要回得去，不用捲回最上面 -->
+  <a class="back-btn noprint" href="vote.html#vote">← 回同仁的評分頁</a>
 
 </div>
 
