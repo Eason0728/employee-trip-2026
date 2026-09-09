@@ -585,7 +585,9 @@ function makeServer() {
     const btn = await page.$('#pageSignup .ghost:has-text("重新整理名單")');
     await btn.click();
     await page.waitForTimeout(300);
-    eq(await btn.textContent(), '整理中…', '按下去馬上顯示整理中');
+    eq(await btn.textContent(), '整理中', '按下去馬上顯示整理中');
+    check('等待中的按鈕有動畫（靜態文字看起來像當掉）',
+      await btn.evaluate(e => e.classList.contains('waiting')));
     check('等待中不能重複按', await btn.isDisabled());
     await page.waitForTimeout(1600);
     eq(await btn.textContent(), '重新整理名單', '回來之後文字復原');
@@ -594,14 +596,63 @@ function makeServer() {
     await tab(page, '成績'); await page.waitForTimeout(1600);
     const rb = await page.$('.ghost:has-text("查詢成績")');
     await rb.click(); await page.waitForTimeout(300);
-    eq(await rb.textContent(), '查詢中…', '查詢成績也有等待狀態');
+    eq(await rb.textContent(), '查詢中', '查詢成績也有等待狀態');
     await page.waitForTimeout(1600);
     eq(await rb.textContent(), '查詢成績', '查完復原');
 
     await ctx.close();
   }
 
-  /* ══════════ 16. 決賽：只清分數、保留名單 ══════════ */
+  /* ══════════ 16. 等太久要主動說一聲 ══════════ */
+  {
+    // 60 併發實測最慢 92 秒。一分鐘不吭聲，同仁會以為當掉而重開頁面。
+    const server = makeServer(), calls = [];
+    server.db.set.voteOpen = true;
+    server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['a - b', 'c - d'] });
+    const ctx = await browser.newContext({ timezoneId: 'Asia/Taipei' });
+    const page = await ctx.newPage();
+    let slow = false;
+    await page.route('**/script.google.com/**', route => {
+      const p = Object.fromEntries(new URL(route.request().url()).searchParams);
+      const res = server.handle(p);
+      const body = `${p.callback}(${JSON.stringify(res)});`;
+      // 投票那一發故意拖到 10 秒後才回，其他照常
+      const delay = (p.action === 'vote' && slow) ? 10000 : 0;
+      setTimeout(() => route.fulfill({
+        status: 200, contentType: 'application/javascript; charset=utf-8', body
+      }), delay);
+    });
+    await page.addInitScript(api => { window.VOTE_API = api; }, API);
+    await page.goto(HOST + '/vote.html#vote');
+    await page.waitForTimeout(600);
+
+    await page.click('.people .person:nth-child(1)');
+    await page.waitForTimeout(200);
+    for (let i = 1; i <= 3; i++) await page.click(`.crit:nth-child(${i}) .scale button:nth-child(4)`);
+
+    slow = true;
+    await page.click('#sendVote');
+    await page.waitForTimeout(500);
+    eq(await page.$eval('#sendVote', e => e.textContent), '送出中', '按下去先顯示送出中');
+    check('送出中的按鈕會動', await page.$eval('#sendVote', e => e.classList.contains('waiting')));
+    check('送出中不能重複按', await page.$eval('#sendVote', e => e.disabled));
+    check('還沒到 8 秒時不亂跳提醒', !(await page.$eval('#msg', e => e.className.includes('show'))));
+
+    await page.waitForTimeout(8200);
+    const m = await page.$eval('#msg', e => e.className.includes('show') ? e.textContent : '');
+    check('等超過 8 秒會主動說一聲', m.includes('排隊'));
+    check('而且告訴同仁不用重按', m.includes('不用重按'));
+
+    await page.waitForTimeout(2500);
+    eq(await page.$eval('#sendVote', e => e.textContent), '送出評分', '回來之後按鈕復原');
+    check('復原後動畫也拿掉', !(await page.$eval('#sendVote', e => e.classList.contains('waiting'))));
+    check('成功訊息蓋掉等待提醒',
+      (await page.$eval('#msg', e => e.textContent)).includes('記錄好了'));
+
+    await ctx.close();
+  }
+
+  /* ══════════ 17. 決賽：只清分數、保留名單 ══════════ */
   {
     const server = makeServer(), calls = [];
     // 七位報名，總分刻意各不相同，前五名是 7,6,5,4,3 號
@@ -665,7 +716,7 @@ function makeServer() {
     await ctx.close();
   }
 
-  /* ══════════ 17. 控制台的清空要問兩次 ══════════ */
+  /* ══════════ 18. 控制台的清空要問兩次 ══════════ */
   {
     const server = makeServer(), calls = [];
     server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['a', 'b'] });

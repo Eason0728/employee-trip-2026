@@ -99,6 +99,11 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);
   font-weight:var(--btn-w);letter-spacing:var(--btn-ls);text-transform:var(--btn-tt);
   box-shadow:var(--btn-sh);width:100%;padding:16px;font-size:18px}
+/* 等待中的按鈕後面跳省略號——文字不動的話，手機上看起來就像當掉了 */
+@keyframes ddgs-dots{0%,20%{opacity:.25}50%{opacity:1}80%,100%{opacity:.25}}
+.waiting::after{content:'･･･';display:inline-block;margin-left:.15em;
+  animation:ddgs-dots 1.1s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.waiting::after{animation:none;opacity:.6}}
 .primary:disabled{background:var(--dis-bg);border-color:var(--dis-bg);color:var(--dis-fg);
   box-shadow:var(--dis-sh);font-weight:var(--btn-w);letter-spacing:normal}
 .ghost{background:transparent;color:var(--dim);width:100%}
@@ -417,9 +422,9 @@ function submitSignup() {
   if (songs.length < MIN_SONGS) { say(ERR.fewsongs, 'bad'); return; }
 
   var btn = document.getElementById('signupBtn');
-  btn.disabled = true; btn.textContent = '送出中…';
+  var idle = busy(btn, '送出中', '還在送，人多的時候要排隊。不用重按——重按會被當成同名擋下來。');
   call({ action: 'signup', dev: dev, name: name, songs: songs.join('|') }, function (res) {
-    btn.disabled = false; btn.textContent = '送出報名';
+    idle();
     if (!res || !res.ok) { say(errText(res && res.err), 'bad'); return; }
     mine = { no: res.no, name: res.name, songs: res.songs };
     writeJSON(MINE_KEY, mine);
@@ -427,30 +432,41 @@ function submitSignup() {
     say('報名成功，你是 ' + res.no + ' 號。', 'ok');
     loadList(true);
   }, function (e) {
-    btn.disabled = false; btn.textContent = '送出報名';
+    idle();
     say(errText(e), 'bad');
   });
 }
 
 /* ══════════ 名單 ══════════ */
 var list = [];
-/** 按鈕進入等待狀態，回傳一個「復原」函式。後端慢的時候一定要有，不然大家會狂按 */
-function busy(btn, text) {
-  if (!btn) return function () {};
-  var was = btn.textContent, done = false;
-  btn.disabled = true;
-  btn.textContent = text;
+/**
+ * 按鈕進入等待狀態，回傳一個「復原」函式。後端慢的時候一定要有，不然大家會狂按。
+ * slowMsg 有給的話，等超過 8 秒會主動說一聲——不講的話同仁會以為當掉。
+ */
+function busy(btn, text, slowMsg) {
+  var done = false, was, timer;
+  if (btn) {
+    was = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = text;
+    btn.classList.add('waiting');
+  }
+  if (slowMsg) timer = setTimeout(function () { say(slowMsg, 'wait', true); }, 8000);
   return function () {
     if (done) return;
     done = true;
-    btn.disabled = false;
-    btn.textContent = was;
+    clearTimeout(timer);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = was;
+      btn.classList.remove('waiting');
+    }
   };
 }
 
 function loadList(force, btn) {
   if (list.length && !force) { renderPeople(); return; }
-  var idle = busy(btn, '整理中…');
+  var idle = busy(btn, '整理中');
   call({ action: 'list' }, function (res) {
     idle();
     if (!res || !res.ok) { say(errText(res && res.err), 'bad'); return; }
@@ -555,19 +571,19 @@ function submitVote() {
   if (v.some(function (x) { return !x; })) { say(ERR.badscore, 'bad'); return; }
 
   var btn = document.getElementById('sendVote');
-  btn.disabled = true; btn.textContent = '送出中…人多時要等一下';
+  var idle = busy(btn, '送出中', '還在送，大家同時在評分要排隊。不用重按——就算按了也只算第一次。');
   var params = { action: 'vote', dev: dev, no: picked };
   v.forEach(function (n, i) { params['s' + (i + 1)] = n; });
 
   call(params, function (res) {
-    btn.disabled = false; btn.textContent = '送出評分';
+    idle();
     if (!res || !res.ok) { say(errText(res && res.err), 'bad'); return; }
     voted[res.no] = res.scores;
     writeJSON(VOTED_KEY, voted);
     say('第 ' + res.no + ' 位記錄好了，小計 ' + res.sum + ' 分。', 'ok');
     pick(res.no);
   }, function (e) {
-    btn.disabled = false; btn.textContent = '送出評分';
+    idle();
     say(errText(e), 'bad');
   });
 }
@@ -576,8 +592,8 @@ function submitVote() {
 function loadRank(btn) {
   var box = document.getElementById('rank');
   var note = document.getElementById('rankNote');
-  var idle = busy(btn, '查詢中…');
-  box.textContent = '查詢中…';
+  var idle = busy(btn, '查詢中');
+  box.textContent = '查詢中';
   call({ action: 'rank' }, function (res) {
     idle();
     if (!res || !res.ok) { box.textContent = ''; say(errText(res && res.err), 'bad'); return; }
