@@ -31,10 +31,11 @@ var ADMIN_PW = 'PASTE_A_PASSWORD_HERE';
 var SHEET_S  = '報名';
 var SHEET_V  = '評分紀錄';
 var HEAD_S   = ['時間', '裝置', '編號', '姓名', '歌曲'];
-var HEAD_V   = ['時間', '裝置', '參賽編號', '唱功', '感情', '炒熱度', '小計'];
+var HEAD_V   = ['時間', '裝置', '參賽編號', '輪次', '唱功', '感情', '炒熱度', '小計'];
 
 var CRITERIA = ['唱功', '感情', '炒熱度'];   // 各 1–5 分
 var MIN_SONGS = 2;                           // 報名至少幾首歌
+var FINALISTS = 5;                           // 決賽取前幾名
 
 /* ══════════ 進入點 ══════════ */
 
@@ -80,8 +81,19 @@ function getSettings() {
   return {
     signupOpen: p.getProperty('signupOpen') !== '0',   // 預設開放報名
     voteOpen  : p.getProperty('voteOpen')   === '1',   // 預設還沒開放評分
-    published : p.getProperty('published')  === '1'    // 成績是否已公佈
+    published : p.getProperty('published')  === '1',   // 成績是否已公佈
+    round     : Number(p.getProperty('round') || 1),   // 1＝初賽，2＝決賽
+    finalists : finalistList()                         // 決賽名單（初賽時是空的）
   };
+}
+
+/** 決賽名單（參賽編號陣列）。初賽時回空陣列。 */
+function finalistList() {
+  try {
+    var raw = props().getProperty('finalists');
+    var a = raw ? JSON.parse(raw) : [];
+    return Object.prototype.toString.call(a) === '[object Array]' ? a : [];
+  } catch (e) { return []; }
 }
 
 function apiState() {
@@ -135,8 +147,24 @@ function apiList() {
   var sh = sheetS();
   var last = sh.getLastRow();
   if (last < 2) return { ok: true, list: [] };
+  var list = allSignups();
+  // 決賽時只回晉級的那幾位——名單留在試算表不動，只是不送出去，
+  // 同仁的手機上就只看得到決賽選手，不會誤評已經淘汰的人。
+  var fin = finalistList();
+  if (fin.length) {
+    list = list.filter(function (x) { return fin.indexOf(x.no) >= 0; });
+    list.sort(function (a, b) { return fin.indexOf(a.no) - fin.indexOf(b.no); });
+  }
+  return { ok: true, list: list };
+}
+
+/** 試算表上的全部報名者，不做任何輪次過濾。查初賽名次時要看得到被淘汰的人。 */
+function allSignups() {
+  var sh = sheetS();
+  var last = sh.getLastRow();
+  if (last < 2) return [];
   var rows = sh.getRange(2, 3, last - 1, 3).getValues();   // 編號 姓名 歌曲
-  var list = rows.map(function (r) {
+  return rows.map(function (r) {
     return {
       no: Number(r[0]),
       name: String(r[1]),
@@ -144,7 +172,6 @@ function apiList() {
                           .filter(function (x) { return x; })
     };
   });
-  return { ok: true, list: list };
 }
 
 function signupCount() {
@@ -164,14 +191,18 @@ function apiVote(p) {
 
   if (!dev) return { ok: false, err: 'nodev' };
   if (!(no >= 1 && no <= signupCount())) return { ok: false, err: 'badno' };
+  // 決賽時只收晉級者的票；沒晉級的人就算硬送也不算
+  var fin = finalistList();
+  if (fin.length && fin.indexOf(no) < 0) return { ok: false, err: 'noteligible' };
   for (var i = 0; i < v.length; i++) {
     if (!(v[i] >= 1 && v[i] <= 5)) return { ok: false, err: 'badscore' };
   }
 
   var sum = v.reduce(function (a, b) { return a + b; }, 0);
   // 不查重複——查就得整張表讀一次，60 人同時送會塞爆。計分時每個裝置只取第一筆。
-  sheetV().appendRow([new Date(), dev, no].concat(v).concat([sum]));
-  return { ok: true, no: no, scores: v, sum: sum };
+  var rd = getSettings().round;
+  sheetV().appendRow([new Date(), dev, no, rd].concat(v).concat([sum]));
+  return { ok: true, no: no, round: rd, scores: v, sum: sum };
 }
 
 /* ══════════ 成績 ══════════ */
@@ -191,9 +222,18 @@ function apiRank() {
 }
 
 /** 真正算分的地方；主持人（apiAdmin，要通行碼）不論公佈與否都拿完整結果 */
-function computeRank() {
+/**
+ * 算分。預設只算「目前這一輪」的票——決賽開始後初賽的票就不再影響名次，
+ * 但那些票還留在試算表裡，初賽成績查得到。
+ * 傳 round 可以指定要算哪一輪（主持人想回頭看初賽成績時用）。
+ */
+function computeRank(round) {
+  var want = round || getSettings().round;
+
+  // 名單一律取全部——查初賽名次時要看得到被淘汰的人（不然「初賽名次」也只剩五位，
+  // 主持人就對不出誰是第六、第七）。只有「當前這一輪」才限縮在決賽名單內。
   var names = {};
-  apiList().list.forEach(function (x) { names[x.no] = x.name; });
+  allSignups().forEach(function (x) { names[x.no] = x.name; });
 
   var sh = sheetV();
   var last = sh.getLastRow();
@@ -202,9 +242,13 @@ function computeRank() {
   var devs = {};
 
   if (last > 1) {
-    var rows = sh.getRange(2, 2, last - 1, 6).getValues();  // 裝置 編號 三項 小計
+    // 裝置 編號 輪次 三項 小計
+    var rows = sh.getRange(2, 2, last - 1, 7).getValues();
     rows.forEach(function (r) {
-      var dev = String(r[0]), no = Number(r[1]), sum = Number(r[5]);
+      var dev = String(r[0]), no = Number(r[1]);
+      var rd = Number(r[2]) || 1;     // 舊資料沒有輪次欄，一律當初賽
+      var sum = Number(r[6]);
+      if (rd !== want) return;        // 不是這一輪的票就不算
       var key = dev + '#' + no;
       if (seen[key]) return;          // 同一裝置對同一人只取第一筆
       seen[key] = 1;
@@ -223,10 +267,15 @@ function computeRank() {
       avg: a.n ? Math.round(a.sum / a.n * 100) / 100 : 0
     };
   });
+  // 決賽進行中時，「這一輪」的名次只列晉級者；查歷史輪次則列全部
+  var fin2 = finalistList();
+  if (fin2.length && want === getSettings().round) {
+    rank = rank.filter(function (r) { return fin2.indexOf(r.no) >= 0; });
+  }
   // 平均高的在前；同分時票多的在前（比較多人聽過）
   rank.sort(function (x, y) { return y.avg - x.avg || y.votes - x.votes || x.no - y.no; });
 
-  return { voters: Object.keys(devs).length, rank: rank };
+  return { voters: Object.keys(devs).length, rank: rank, round: want };
 }
 
 /* ══════════ 主持人 ══════════ */
@@ -243,11 +292,47 @@ function apiAdmin(p) {
     case 'voteClose'  : pr.setProperty('voteOpen',   '0'); break;
     case 'publish'    : pr.setProperty('published',  '1'); break;
     case 'unpublish'  : pr.setProperty('published',  '0'); break;
+    case 'finals': {
+      // 進決賽：把目前這一輪的前 N 名記下來，輪次 +1。
+      // **報名資料一列都不刪**，初賽的票也留著——只是名次改看新的一輪。
+      var top = computeRank().rank.slice(0, FINALISTS)
+                  .filter(function (r) { return r.votes > 0; })
+                  .map(function (r) { return r.no; });
+      if (!top.length) return { ok: false, err: 'novotes' };
+      pr.setProperty('finalists', JSON.stringify(top));
+      pr.setProperty('round', String(getSettings().round + 1));
+      pr.setProperty('voteOpen', '0');      // 決賽要主持人自己開
+      pr.setProperty('published', '0');     // 名次重新來過
+      break;
+    }
+    case 'backToPrelim':
+      // 按錯了要回得去：名單放回全部、輪次退回 1。票都還在，初賽名次會原樣回來。
+      pr.deleteProperty('finalists');
+      pr.setProperty('round', '1');
+      pr.setProperty('voteOpen', '0');
+      pr.setProperty('published', '0');
+      break;
+    case 'clearVotes': {
+      // 只清「這一輪」的票，報名名單一列都不動。打錯分數要重評時用。
+      var rd = getSettings().round;
+      var shv = ss().getSheetByName(SHEET_V);
+      if (shv && shv.getLastRow() > 1) {
+        var n = shv.getLastRow() - 1;
+        var vals = shv.getRange(2, 1, n, shv.getLastColumn()).getValues();
+        var keep = vals.filter(function (r) { return (Number(r[3]) || 1) !== rd; });
+        shv.getRange(2, 1, n, shv.getLastColumn()).clearContent();
+        if (keep.length) shv.getRange(2, 1, keep.length, keep[0].length).setValues(keep);
+      }
+      pr.setProperty('published', '0');
+      break;
+    }
     case 'reset':
       // 清掉所有報名與評分，設定歸零。現場重來一輪才用，按下去沒有復原。
       pr.deleteProperty('signupOpen');
       pr.deleteProperty('voteOpen');
       pr.deleteProperty('published');
+      pr.deleteProperty('round');
+      pr.deleteProperty('finalists');
       [SHEET_S, SHEET_V].forEach(function (n) {
         var sh = ss().getSheetByName(n);
         if (sh && sh.getLastRow() > 1) {
@@ -261,10 +346,14 @@ function apiAdmin(p) {
   // 主持人走 computeRank：他要在公佈前就看得到即時排名
   var full = computeRank();
   var st2  = getSettings();
-  return {
+  var out = {
     ok: true, published: st2.published, settings: st2,
-    voters: full.voters, rank: full.rank, signups: apiList().list
+    voters: full.voters, rank: full.rank, signups: apiList().list,
+    round: st2.round
   };
+  // 決賽時把初賽名次一起送回去，主持人才對得起來誰是怎麼晉級的
+  if (st2.round > 1) out.prelim = computeRank(1).rank;
+  return out;
 }
 
 /* ══════════ 試算表 ══════════ */
@@ -297,12 +386,28 @@ function ensure(name, headers, textCol) {
   var sh = s.getSheetByName(name);
   if (!sh) {
     sh = s.insertSheet(name);
-    sh.appendRow(headers);
-    sh.setFrozenRows(1);
-    if (textCol) {
-      // 裝置編號當文字，不然像 1e5 這種會被當數字
-      sh.getRange(1, textCol, sh.getMaxRows(), 1).setNumberFormat('@');
+    writeHead(sh, headers, textCol);
+    return sh;
+  }
+  // 分頁已經在、但還沒有任何資料時，把表頭換成最新的。
+  // 欄位改版（例如 2026-09-10 評分紀錄多了「輪次」）時，舊表頭會跟新程式對不起來。
+  // **有資料就不動**——那時改表頭只會讓既有的列整排錯位。
+  if (sh.getLastRow() <= 1) {
+    var cols = sh.getLastColumn();
+    var cur = cols ? sh.getRange(1, 1, 1, cols).getValues()[0].join(',') : '';
+    if (cur !== headers.join(',')) {
+      sh.clear();
+      writeHead(sh, headers, textCol);
     }
   }
   return sh;
+}
+
+function writeHead(sh, headers, textCol) {
+  sh.appendRow(headers);
+  sh.setFrozenRows(1);
+  if (textCol) {
+    // 裝置編號當文字，不然像 1e5 這種會被當數字
+    sh.getRange(1, textCol, sh.getMaxRows(), 1).setNumberFormat('@');
+  }
 }

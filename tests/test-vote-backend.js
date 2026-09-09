@@ -34,9 +34,11 @@ function makeSheet() {
     getLastColumn: () => (rows[0] ? rows[0].length : 0),
     getMaxRows: () => rows.length + 100,
     setFrozenRows: () => {},
+    clear: () => { rows.length = 0; },
     getRange: (r1, c1, nR, nC) => ({
       getValues: () => rows.slice(r1 - 1, r1 - 1 + nR).map(r => r.slice(c1 - 1, c1 - 1 + nC)),
       setNumberFormat: () => {},
+      setValues: v => { v.forEach((row, i) => { rows[r1 - 1 + i] = row.slice(); }); },
       clearContent: () => { rows.splice(r1 - 1, nR); }
     })
   };
@@ -82,7 +84,7 @@ function load(env) {
   const names = Object.keys(env).filter(n => !n.startsWith('__'));
   const fn = new Function(...names, code +
     '\n;return {doGet,doPost,route,apiState,apiSignup,apiList,apiVote,apiRank,apiAdmin,' +
-    'getSettings,signupCount,setup,computeRank,CRITERIA,MIN_SONGS};');
+    'getSettings,signupCount,setup,computeRank,finalistList,CRITERIA,MIN_SONGS,FINALISTS};');
   return fn(...names.map(n => env[n]));
 }
 
@@ -380,9 +382,10 @@ function signup(api, name, songs, d) {
 
   eq(V.rows.length, 2, '評分：表頭＋一列資料');
   eq(V.rows[1][2], 1,  '評分列第 3 欄是參賽編號');
-  eq(V.rows[1][6], 12, '評分列最後一欄是小計');
-  eq(V.rows[1].length, 7, '評分列共 7 欄');
-  eq(V.rows[0].join(','), '時間,裝置,參賽編號,唱功,感情,炒熱度,小計', '評分表頭七欄');
+  eq(V.rows[1][3], 1,  '評分列第 4 欄是輪次（初賽＝1）');
+  eq(V.rows[1][7], 12, '評分列最後一欄是小計');
+  eq(V.rows[1].length, 8, '評分列共 8 欄');
+  eq(V.rows[0].join(','), '時間,裝置,參賽編號,輪次,唱功,感情,炒熱度,小計', '評分表頭八欄');
 }
 
 /* ══════════ 14. 一票一裝置的邊界 ══════════ */
@@ -418,7 +421,125 @@ function signup(api, name, songs, d) {
   eq(Object.keys(env.__sheets).length, 2, '重複執行 setup 不會多建分頁');
 }
 
-/* ══════════ 16. 參賽者自己也能被評 ══════════ */
+/* ══════════ 16. 決賽：只清分數、保留名單 ══════════ */
+{
+  const { api } = setup({ voteOpen: true });
+  const names = ['甲', '乙', '丙', '丁', '戊', '己', '庚'];
+  names.forEach((n, i) => signup(api, n, null, dev(100 + i)));
+  eq(api.signupCount(), 7, '七位報名');
+
+  // 初賽：總分刻意各不相同（15/14/13/12/11/10/9），排序才是照分數不是照編號
+  [[7, 5, 5, 5], [6, 5, 5, 4], [5, 5, 4, 4], [4, 4, 4, 4],
+   [3, 4, 4, 3], [2, 4, 3, 3], [1, 3, 3, 3]].forEach(([no, a, b, c], i) => {
+    api.apiVote({ dev: dev(200 + i), no: no, s1: a, s2: b, s3: c });
+  });
+  const prelim = api.computeRank().rank;
+  eq(prelim[0].no, 7, '初賽第一是 7 號');
+  eq(prelim.length, 7, '初賽名次有七位');
+
+  // ── 進決賽 ──
+  const fin = api.apiAdmin({ pw: PW, cmd: 'finals' });
+  eq(fin.ok, true, 'finals 指令成功');
+  eq(fin.settings.round, 2, '輪次變成 2');
+  eq(fin.settings.voteOpen, false, '進決賽自動關掉評分（要主持人重新開）');
+  eq(fin.settings.published, false, '進決賽自動收回成績');
+  eq(fin.settings.finalists.join(','), '7,6,5,4,3', '晉級的是初賽前五名');
+
+  // 名單只剩五位，但報名資料一列都沒刪
+  eq(api.apiList().list.length, 5, '決賽名單只有五位');
+  eq(api.signupCount(), 7, '⚠ 報名資料一列都沒刪（試算表還是七列）');
+  eq(api.apiList().list.map(x => x.no).join(','), '7,6,5,4,3', '決賽名單照初賽名次排');
+
+  // 沒晉級的人收不到票
+  eq(api.apiAdmin({ pw: PW, cmd: 'voteOpen' }).settings.voteOpen, true, '主持人開放決賽評分');
+  eq(api.apiVote({ dev: dev(300), no: 1, s1: 5, s2: 5, s3: 5 }).err, 'noteligible',
+     '沒晉級的人就算硬送也不算');
+  eq(api.apiVote({ dev: dev(300), no: 7, s1: 5, s2: 5, s3: 5 }).ok, true, '晉級的收得到');
+
+  // 決賽計分只看決賽的票
+  api.apiVote({ dev: dev(301), no: 6, s1: 4, s2: 4, s3: 4 });
+  const f = api.computeRank().rank;
+  eq(f.length, 5, '決賽名次只有五位');
+  eq(f[0].no, 7, '決賽第一是 7 號（15 分）');
+  eq(f[0].total, 15, '決賽分數不含初賽那 15 分——只算這一輪');
+  eq(f[1].no, 6, '第二是 6 號（12 分）');
+  eq(f.find(x => x.no === 5).votes, 0, '決賽沒被評到的是 0 票，不是沿用初賽');
+
+  // 初賽成績還查得到
+  const back = api.computeRank(1).rank;
+  eq(back.length, 7, '⚠ 查初賽名次時看得到全部七位，含被淘汰的');
+  eq(back[0].no, 7, '初賽第一名不變');
+  eq(back.find(x => x.no === 1).total, 9, '被淘汰的人初賽拿幾分也查得到');
+  eq(back.find(x => x.no === 7).total, 15, '初賽的票還在試算表裡，查得到');
+
+  // ── 只清這一輪的分數，名單不動 ──
+  const cv = api.apiAdmin({ pw: PW, cmd: 'clearVotes' });
+  eq(cv.ok, true, 'clearVotes 成功');
+  eq(api.computeRank().voters, 0, '決賽的票清光了');
+  eq(api.apiList().list.length, 5, '⚠ 名單還在，五位一個都沒少');
+  eq(api.computeRank(1).rank.find(x => x.no === 7).total, 15, '⚠ 初賽的票沒被誤清');
+  eq(cv.settings.published, false, '清完分數自動收回成績');
+
+  // ── 退回初賽 ──
+  const bp = api.apiAdmin({ pw: PW, cmd: 'backToPrelim' });
+  eq(bp.settings.round, 1, '退回第 1 輪');
+  eq(bp.settings.finalists.length, 0, '決賽名單清掉');
+  eq(api.apiList().list.length, 7, '名單回到全部七位');
+  eq(api.computeRank().rank[0].no, 7, '初賽名次原樣回來');
+  eq(api.computeRank().rank[0].total, 15, '初賽分數原樣回來');
+}
+
+/* ══════════ 17. 欄位改版時的表頭 ══════════ */
+{
+  // 分頁已經存在、但表頭是舊版且還沒有資料 → 應該自動換成新表頭
+  const env = makeEnv();
+  const old = makeSheet();
+  old.appendRow(['時間', '裝置', '參賽編號', '唱功', '感情', '炒熱度', '小計']);  // 舊七欄
+  env.__sheets['評分紀錄'] = old;
+  const api = load(env);
+  api.setup();
+  eq(env.__sheets['評分紀錄'].rows[0].join(','),
+     '時間,裝置,參賽編號,輪次,唱功,感情,炒熱度,小計', '空分頁的舊表頭會被換成新的');
+
+  // 已經有資料時絕對不能動表頭——動了既有的列會整排錯位
+  const env2 = makeEnv();
+  const used = makeSheet();
+  used.appendRow(['時間', '裝置', '參賽編號', '唱功', '感情', '炒熱度', '小計']);
+  used.appendRow([new Date(), 'd1', 1, 5, 5, 5, 15]);
+  env2.__sheets['評分紀錄'] = used;
+  const api2 = load(env2);
+  api2.setup();
+  eq(env2.__sheets['評分紀錄'].rows[0].length, 7, '⚠ 已有資料時表頭原封不動');
+  eq(env2.__sheets['評分紀錄'].rows.length, 2, '既有的資料列還在');
+}
+
+/* ══════════ 18. 決賽的邊界 ══════════ */
+{
+  const { api } = setup({ voteOpen: true });
+  signup(api, '甲');
+  signup(api, '乙', null, dev(2));
+  eq(api.apiAdmin({ pw: PW, cmd: 'finals' }).err, 'novotes', '一票都沒有時不給進決賽');
+
+  // 只有兩人有票 → 晉級名單就只有那兩人，不會塞進沒票的人
+  api.apiVote({ dev: dev(11), no: 1, s1: 5, s2: 5, s3: 5 });
+  api.apiVote({ dev: dev(12), no: 2, s1: 3, s2: 3, s3: 3 });
+  const f = api.apiAdmin({ pw: PW, cmd: 'finals' });
+  eq(f.settings.finalists.join(','), '1,2', '不足五人時就取有票的那幾位');
+  eq(api.apiList().list.length, 2, '決賽名單兩位');
+
+  // 決賽時回報初賽名次，主持人才對得起來
+  const st = api.apiAdmin({ pw: PW, cmd: 'status' });
+  ok(Array.isArray(st.prelim), '決賽時 admin 回傳初賽名次');
+  eq(st.prelim[0].no, 1, '初賽第一是 1 號');
+  eq(st.round, 2, 'admin 回傳目前輪次');
+
+  // reset 要把輪次也歸零
+  const r = api.apiAdmin({ pw: PW, cmd: 'reset' });
+  eq(r.settings.round, 1, 'reset 後回到初賽');
+  eq(r.settings.finalists.length, 0, 'reset 清掉決賽名單');
+}
+
+/* ══════════ 19. 參賽者自己也能被評 ══════════ */
 {
   const { api } = setup({ voteOpen: true });
   const me = dev(91);

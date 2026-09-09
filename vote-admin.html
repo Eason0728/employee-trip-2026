@@ -137,6 +137,24 @@ td .songs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
     </p>
   </section>
 
+  <!-- ══════════ 賽制 ══════════ -->
+  <section class="card noprint">
+    <h2>賽制</h2>
+    <div class="now">
+      <span class="big" id="roundName">初賽</span>
+      <span class="cap" id="roundNote">—</span>
+    </div>
+    <div id="finalList" class="hint" style="margin-bottom:12px"></div>
+    <div class="row">
+      <button class="go" id="toFinals">進入決賽（取前 5 名）</button>
+      <button id="toPrelim" hidden>退回初賽</button>
+    </div>
+    <p class="hint" style="margin-top:12px">
+      進決賽會把目前的前五名留在名單上，同仁的手機就只看得到這五位。
+      <b>報名資料和初賽的票都不會刪</b>，按錯了「退回初賽」就原樣回來。
+    </p>
+  </section>
+
   <!-- ══════════ 報名名單 ══════════ -->
   <section class="card">
     <h2 class="noprint">報名名單　<span id="cnt" style="color:var(--faint);font-weight:400"></span></h2>
@@ -163,13 +181,21 @@ td .songs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
 
   <!-- ══════════ 危險區 ══════════ -->
   <section class="card noprint">
-    <h2>重來一輪</h2>
+    <h2>重來</h2>
     <div class="row">
+      <button id="clearVotes">只清這一輪的分數</button>
       <button class="danger" id="reset">清空報名與分數</button>
     </div>
     <p class="hint" style="margin-top:12px">
-      按下去報名和分數全沒了，沒有復原。成績要留就先截圖或列印這一頁。
+      <b>只清分數</b>：報名名單一個都不動，分數重來。打錯分數要重評時用。<br>
+      <b>清空全部</b>：報名和分數全沒了，沒有復原。成績要留就先截圖或列印這一頁。
     </p>
+  </section>
+
+  <!-- 決賽時把初賽名次擺出來，主持人對得起來誰是怎麼晉級的 -->
+  <section class="card" id="prelimCard" hidden>
+    <h2 class="noprint">初賽名次（參考）</h2>
+    <div id="prelimRank"></div>
   </section>
 
   <!-- 看完排名時人在頁尾，這裡也要回得去，不用捲回最上面 -->
@@ -281,22 +307,55 @@ function render(res) {
 
   // 即時排名
   document.getElementById('devs').textContent = res.voters || 0;
-  var rows = res.rank || [], rk = document.getElementById('rank');
-  if (!rows.length || !rows.some(function (r) { return r.votes; })) {
-    rk.innerHTML = '<p class="hint">還沒有分數。</p>';
+  document.getElementById('rank').innerHTML = rankTable(res.rank, 3);
+
+  // ── 賽制 ──
+  var rd = res.round || (st.round || 1);
+  var fin = st.finalists || [];
+  document.getElementById('roundName').textContent = rd > 1 ? '決賽' : '初賽';
+  document.getElementById('roundNote').textContent =
+    rd > 1 ? ('晉級 ' + fin.length + ' 位') : ('報名 ' + list.length + ' 位');
+  document.getElementById('toFinals').hidden = rd > 1;
+  document.getElementById('toPrelim').hidden = rd <= 1;
+
+  var fl = document.getElementById('finalList');
+  if (rd > 1 && fin.length) {
+    var byNo = {};
+    (res.signups || []).forEach(function (x) { byNo[x.no] = x.name; });
+    fl.innerHTML = '晉級：' + fin.map(function (n) {
+      return '<b style="color:var(--blue)">' + n + '</b> ' + esc(byNo[n] || '');
+    }).join('　');
   } else {
-    rk.innerHTML = '<table><thead><tr><th class="n">名次</th><th>參賽者</th>'
-      + '<th class="n">票數</th><th class="n">總分</th><th class="n">平均</th></tr></thead><tbody>'
-      + rows.map(function (r, i) {
-          return '<tr' + (i < 3 ? ' class="top"' : '') + '>'
-            + '<td class="n no">' + (i + 1) + '</td>'
-            + '<td>' + r.no + ' 號　' + esc(r.name) + '</td>'
-            + '<td class="n">' + r.votes + '</td>'
-            + '<td class="n">' + r.total + '</td>'
-            + '<td class="n">' + r.avg.toFixed(2) + '</td></tr>';
-        }).join('')
-      + '</tbody></table>';
+    fl.innerHTML = '';
   }
+
+  // 決賽時把初賽名次擺出來對照
+  var pc = document.getElementById('prelimCard');
+  if (res.prelim && res.prelim.length) {
+    pc.hidden = false;
+    document.getElementById('prelimRank').innerHTML = rankTable(res.prelim, 0);
+  } else {
+    pc.hidden = true;
+  }
+}
+
+/** 排名表：topN 是要標黃底的前幾名（初賽名次表傳 0＝都不標） */
+function rankTable(rows, topN) {
+  rows = rows || [];
+  if (!rows.length || !rows.some(function (r) { return r.votes; })) {
+    return '<p class="hint">還沒有分數。</p>';
+  }
+  return '<table><thead><tr><th class="n">名次</th><th>參賽者</th>'
+    + '<th class="n">票數</th><th class="n">總分</th><th class="n">平均</th></tr></thead><tbody>'
+    + rows.map(function (r, i) {
+        return '<tr' + (i < topN ? ' class="top"' : '') + '>'
+          + '<td class="n no">' + (i + 1) + '</td>'
+          + '<td>' + r.no + ' 號　' + esc(r.name) + '</td>'
+          + '<td class="n">' + r.votes + '</td>'
+          + '<td class="n">' + r.total + '</td>'
+          + '<td class="n">' + r.avg.toFixed(2) + '</td></tr>';
+      }).join('')
+    + '</tbody></table>';
 }
 
 /* ══════════ 事件 ══════════ */
@@ -327,6 +386,25 @@ document.getElementById('pw').addEventListener('keydown', function (e) {
 });
 
 document.getElementById('refresh').addEventListener('click', function () { admin('status'); });
+
+document.getElementById('toFinals').addEventListener('click', function () {
+  if (!confirm('進入決賽？目前的前五名會留在名單上，其他人這一輪就結束了。\n（報名資料和初賽的票都不會刪，按錯可以退回。）')) return;
+  admin('finals', function (res) {
+    if (!res) return;
+    if (res.err === 'novotes') { say('還沒有人評分，沒辦法決定前五名。', 'bad'); return; }
+    if (res.ok) say('已進入決賽，記得重新開放評分。');
+  });
+});
+
+document.getElementById('toPrelim').addEventListener('click', function () {
+  if (!confirm('退回初賽？決賽名單會清掉，初賽名次原樣回來。')) return;
+  admin('backToPrelim', function (res) { if (res && res.ok) say('已退回初賽。'); });
+});
+
+document.getElementById('clearVotes').addEventListener('click', function () {
+  if (!confirm('只清這一輪的分數？報名名單不動，之前輪次的分數也留著。')) return;
+  admin('clearVotes', function (res) { if (res && res.ok) say('這一輪的分數清掉了，名單還在。'); });
+});
 
 document.getElementById('reset').addEventListener('click', function () {
   if (!confirm('清空所有報名與分數？沒有復原。')) return;

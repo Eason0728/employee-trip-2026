@@ -30,13 +30,20 @@ function eq(a, b, name) { check(name, a === b, `得到 ${JSON.stringify(a)}，�
 
 /* ══════════ 假後端：形狀照 apps-script-vote.gs ══════════ */
 function makeServer() {
-  const db = { signups: [], votes: [], set: { signupOpen: true, voteOpen: false, published: false } };
+  const db = { signups: [], votes: [], round: 1, finalists: [],
+               set: { signupOpen: true, voteOpen: false, published: false } };
   const CRIT = ['唱功', '感情', '炒熱度'];
 
-  function rank() {
+  const visible = () => db.finalists.length
+    ? db.finalists.map(n => db.signups.find(s => s.no === n)).filter(Boolean)
+    : db.signups;
+
+  function rank(want) {
+    want = want || db.round;
     const names = {}, agg = {}, seen = {}, devs = {};
-    db.signups.forEach(s => { names[s.no] = s.name; });
+    db.signups.forEach(s => { names[s.no] = s.name; });   // 查歷史輪次要看得到被淘汰的人
     db.votes.forEach(v => {
+      if ((v.round || 1) !== want) return;
       const key = v.dev + '#' + v.no;
       if (seen[key]) return;
       seen[key] = 1; devs[v.dev] = 1;
@@ -49,8 +56,11 @@ function makeServer() {
       return { no, name: names[no], votes: a.n, total: a.sum,
                avg: a.n ? Math.round(a.sum / a.n * 100) / 100 : 0 };
     });
-    out.sort((x, y) => y.avg - x.avg || y.votes - x.votes || x.no - y.no);
-    return { rank: out, voters: Object.keys(devs).length };
+    let res = out;
+    if (db.finalists.length && want === db.round)
+      res = res.filter(r => db.finalists.indexOf(r.no) >= 0);
+    res.sort((x, y) => y.avg - x.avg || y.votes - x.votes || x.no - y.no);
+    return { rank: res, voters: Object.keys(devs).length };
   }
 
   return {
@@ -71,15 +81,17 @@ function makeServer() {
           return { ok: true, no, name, songs };
         }
         case 'list':
-          return { ok: true, list: db.signups.map(s => ({ no: s.no, name: s.name, songs: s.songs })) };
+          return { ok: true, list: visible().map(s => ({ no: s.no, name: s.name, songs: s.songs })) };
         case 'vote': {
           if (!db.set.voteOpen) return { ok: false, err: 'voteClosed' };
           const no = Number(p.no);
           if (!db.signups.some(s => s.no === no)) return { ok: false, err: 'badno' };
+          if (db.finalists.length && db.finalists.indexOf(no) < 0)
+            return { ok: false, err: 'noteligible' };
           const v = [1, 2, 3].map(i => Number(p['s' + i]));
           if (v.some(x => !(x >= 1 && x <= 5))) return { ok: false, err: 'badscore' };
-          db.votes.push({ dev: p.dev, no, scores: v });
-          return { ok: true, no, scores: v, sum: v.reduce((a, b) => a + b, 0) };
+          db.votes.push({ dev: p.dev, no, round: db.round, scores: v });
+          return { ok: true, no, round: db.round, scores: v, sum: v.reduce((a, b) => a + b, 0) };
         }
         case 'rank': {
           const r = rank();
@@ -94,10 +106,31 @@ function makeServer() {
           if (c === 'voteClose')   db.set.voteOpen = false;
           if (c === 'publish')     db.set.published = true;
           if (c === 'unpublish')   db.set.published = false;
-          if (c === 'reset') { db.signups = []; db.votes = []; db.set = { signupOpen: true, voteOpen: false, published: false }; }
+          if (c === 'finals') {
+            const top = rank().rank.slice(0, 5).filter(r => r.votes > 0).map(r => r.no);
+            if (!top.length) return { ok: false, err: 'novotes' };
+            db.finalists = top; db.round += 1;
+            db.set.voteOpen = false; db.set.published = false;
+          }
+          if (c === 'backToPrelim') {
+            db.finalists = []; db.round = 1;
+            db.set.voteOpen = false; db.set.published = false;
+          }
+          if (c === 'clearVotes') {
+            db.votes = db.votes.filter(v => (v.round || 1) !== db.round);
+            db.set.published = false;
+          }
+          if (c === 'reset') {
+            db.signups = []; db.votes = []; db.round = 1; db.finalists = [];
+            db.set = { signupOpen: true, voteOpen: false, published: false };
+          }
           const r = rank();
-          return { ok: true, settings: { ...db.set }, signups: db.signups.map(s => ({ no: s.no, name: s.name, songs: s.songs })),
-                   published: db.set.published, voters: r.voters, rank: r.rank };
+          const out = { ok: true,
+            settings: { ...db.set, round: db.round, finalists: db.finalists.slice() },
+            signups: visible().map(s => ({ no: s.no, name: s.name, songs: s.songs })),
+            published: db.set.published, voters: r.voters, rank: r.rank, round: db.round };
+          if (db.round > 1) out.prelim = rank(1).rank;
+          return out;
         }
         default: return { ok: false, err: 'badaction' };
       }
@@ -530,7 +563,71 @@ function makeServer() {
     await ctx.close();
   }
 
-  /* ══════════ 15. 控制台的清空要問兩次 ══════════ */
+  /* ══════════ 15. 決賽：只清分數、保留名單 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    // 七位報名，總分刻意各不相同，前五名是 7,6,5,4,3 號
+    ['甲','乙','丙','丁','戊','己','庚'].forEach((n, i) =>
+      server.db.signups.push({ no: i + 1, dev: 'x' + i, name: n, songs: ['a - b', 'c - d'] }));
+    [[7,5,5,5],[6,5,5,4],[5,5,4,4],[4,4,4,4],[3,4,4,3],[2,4,3,3],[1,3,3,3]]
+      .forEach(([no,a1,b1,c1], i) =>
+        server.db.votes.push({ dev: 'p' + i, no, round: 1, scores: [a1,b1,c1] }));
+
+    const { ctx, page } = await phone(server, calls, HOST + '/vote-admin.html');
+    await page.fill('#pw', 'testpw'); await page.click('#enter'); await page.waitForTimeout(500);
+
+    eq(await page.textContent('#roundName'), '初賽', '一開始是初賽');
+    eq(await page.textContent('#roundNote'), '報名 7 位', '顯示報名人數');
+    check('初賽時有「進入決賽」', !(await page.$eval('#toFinals', e => e.hidden)));
+    check('初賽時沒有「退回初賽」', await page.$eval('#toPrelim', e => e.hidden));
+    check('初賽時不顯示初賽名次卡（那時排名本身就是初賽）',
+      await page.$eval('#prelimCard', e => e.hidden));
+
+    // ── 進決賽 ──
+    page.on('dialog', d => d.accept());
+    await page.click('#toFinals'); await page.waitForTimeout(500);
+
+    eq(await page.textContent('#roundName'), '決賽', '切到決賽');
+    eq(await page.textContent('#roundNote'), '晉級 5 位', '顯示晉級人數');
+    const fl = await page.textContent('#finalList');
+    check('列出晉級名單', fl.includes('晉級') && fl.includes('庚') && fl.includes('己'));
+    check('沒晉級的不在名單上', !fl.includes('甲') && !fl.includes('乙'));
+    check('決賽時換成「退回初賽」', !(await page.$eval('#toPrelim', e => e.hidden))
+      && await page.$eval('#toFinals', e => e.hidden));
+    check('決賽時秀出初賽名次供對照', !(await page.$eval('#prelimCard', e => e.hidden)));
+    eq((await page.$$('#prelimRank .n.no')).length, 7, '初賽名次仍是七位');
+
+    eq(await page.textContent('#cnt'), '共 5 位', '報名名單只剩五位');
+    eq(await page.textContent('#pVote'), '未開放', '進決賽會自動關掉評分');
+    eq(await page.textContent('#pPub'), '未公佈', '進決賽會自動收回成績');
+
+    // ── 同仁端只看得到五位 ──
+    server.db.set.voteOpen = true;
+    const { ctx: c2, page: p2 } = await phone(server, calls, HOST + '/vote.html#vote');
+    await p2.waitForTimeout(500);
+    eq((await p2.$$('.people .person')).length, 5, '同仁的手機上只剩五位決賽選手');
+    const who = await p2.$$eval('.people .person', bs => bs.map(b => b.textContent).join(''));
+    check('淘汰的人不出現在同仁端', !who.includes('甲') && !who.includes('乙'));
+    await c2.close();
+
+    // ── 只清分數：名單不動 ──
+    await page.click('#clearVotes'); await page.waitForTimeout(500);
+    eq(calls.filter(c => c.cmd === 'clearVotes').length, 1, '送出 clearVotes');
+    eq(await page.textContent('#cnt'), '共 5 位', '⚠ 只清分數之後名單一位都沒少');
+    eq(await page.textContent('#devs'), '0', '這一輪的分數清光了');
+    check('初賽名次還在（沒被一起清掉）',
+      (await page.textContent('#prelimRank')).includes('庚'));
+
+    // ── 退回初賽 ──
+    await page.click('#toPrelim'); await page.waitForTimeout(500);
+    eq(await page.textContent('#roundName'), '初賽', '退回初賽');
+    eq(await page.textContent('#cnt'), '共 7 位', '名單回到七位');
+    check('初賽名次原樣回來', (await page.textContent('#rank')).includes('庚'));
+
+    await ctx.close();
+  }
+
+  /* ══════════ 16. 控制台的清空要問兩次 ══════════ */
   {
     const server = makeServer(), calls = [];
     server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['a', 'b'] });
