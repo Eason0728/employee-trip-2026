@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>鼎鼎好聲音</title>
+<meta name="description" content="填名字和想唱的歌就完成報名。唱完之後大家用手機打分數，主持人公佈才看得到名次。">
+<meta property="og:title" content="鼎鼎好聲音｜報名與評分">
+<meta property="og:description" content="填名字和想唱的歌就完成報名。唱完之後大家用手機打分數，主持人公佈才看得到名次。">
 <style>
 :root{
   color-scheme:light;
@@ -164,32 +167,13 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
 .rank .avg{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;
   font-family:ui-monospace,monospace;flex:none}
 
-/* 示範模式那條（原本寫死在 inline style，搬過來吃主題色） */
-#demoBar{background:var(--card2);border:1px solid var(--line);color:var(--dim);
   border-radius:var(--r-card);padding:11px 13px;margin-bottom:14px;font-size:14px}
-#demoBar b{color:var(--text)}
-#demoBar .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-#demoBar button{font-size:13px;padding:7px 10px}
-#demoBar .foot{font-size:12.5px;color:var(--faint);margin-top:7px}
 </style>
 </head>
 <body>
 
 <h1>鼎鼎好聲音</h1>
 <p class="sub">2026 鼎兆元員工旅遊　9/14 晚間</p>
-
-<div id="demoBar" style="display:none">
-  <b>示範模式</b>　資料只存在這支手機裡，不會送出。正式上線後這條會自動消失。
-  <div class="row">
-    <button onclick="VOTE_DEMO_SEED()">塞 4 位假參賽者</button>
-    <button onclick="VOTE_DEMO_ADMIN('publish')">公佈成績</button>
-    <button onclick="VOTE_DEMO_ADMIN('voteClose')">關閉評分</button>
-    <button onclick="VOTE_DEMO_CLEAR()">全部清空</button>
-  </div>
-  <div class="foot">
-    這排按鈕只有示範模式看得到，正式版沒有。
-  </div>
-</div>
 
 <div class="tabs" role="tablist">
   <button role="tab" id="tabSignup" aria-selected="true"  onclick="go('signup')">報名</button>
@@ -267,7 +251,6 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
 var UNSET = 'PASTE_APPS_SCRIPT_URL_HERE';          // 「還沒接後端」的標記，換網址時別動它
 var API   = window.VOTE_API || 'https://script.google.com/macros/s/AKfycbwQMUeaML-qtuQc_AtV210iYGzYIdLkIpEZ9btW3l1DGUMtJvjR5NRMpzA0GYPchSxalA/exec';   // ← 換後端只改這一行；window.VOTE_API 只給回測覆寫
 var DEMO  = (API === UNSET) && !!window.VOTE_DEMO;
-if (DEMO) document.getElementById('demoBar').style.display = 'block';
 
 var CRITERIA = ['唱功', '感情', '炒熱度'];
 var CRIT_HINT = { '唱功': '音準、穩不穩', '感情': '有沒有唱進去', '炒熱度': '底下有沒有跟著動' };

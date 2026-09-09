@@ -150,8 +150,7 @@ function makeServer() {
     eq(await page.title(), '鼎鼎好聲音', '頁面標題');
     check('預設停在報名頁', await page.$eval('#tabSignup', e => e.getAttribute('aria-selected')) === 'true');
     eq((await page.$$('.song-row')).length, 2, '一開始就有兩個歌曲欄');
-    check('示範模式那條沒出現（已接真後端）',
-      await page.$eval('#demoBar', e => getComputedStyle(e).display) === 'none');
+    check('沒有示範模式那一條', (await page.$$('#demoBar')).length === 0);
 
     // 裝置編號：一支手機一個，重整不變
     const dev1 = await page.evaluate(() => localStorage.getItem('ddgs-dev'));
@@ -439,6 +438,19 @@ function makeServer() {
       check(f + ' 示範模式的判斷對象是 UNSET，沒被網址替換誤傷', /var DEMO\s+= \(API === UNSET\)/.test(src));
       check(f + ' UNSET 仍是佔位字串', /var UNSET = 'PASTE_APPS_SCRIPT_URL_HERE'/.test(src));
     });
+
+    // ⚠ 2026-09-09 踩到：demoBar 用 display:none 藏起來，但 LINE 的連結預覽讀的是
+    //    原始碼、不管 CSS，貼進群組會秀出「示範模式 資料只存在這支手機裡」。
+    //    隱藏不等於刪除——會被外部爬蟲讀到的字，只能真的拿掉。
+    ['vote.html', 'vote-admin.html'].forEach(f => {
+      const src = fs.readFileSync(path.join(root, f), 'utf8');
+      check(f + ' 原始碼裡沒有示範模式的字（連結預覽會讀到）', !/示範模式/.test(src));
+      check(f + ' 沒有 demoBar 殘留', !/demoBar/.test(src));
+    });
+
+    // 貼進群組時要有像樣的預覽文字，不然 LINE 會自己抓頁面上第一段
+    const voteSrc = fs.readFileSync(path.join(root, 'vote.html'), 'utf8');
+    check('同仁頁有連結預覽用的說明', /<meta property="og:description" content="[^"]{10,}"/.test(voteSrc));
 
     // 後端正本在 public repo，通行碼只能是佔位符（真的那組在 deploy-local/）
     const gs = fs.readFileSync(path.join(root, 'docs', 'apps-script-vote.gs'), 'utf8');
