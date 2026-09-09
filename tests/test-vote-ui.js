@@ -477,7 +477,7 @@ function makeServer() {
     ['vote.html', 'vote-admin.html'].forEach(f => {
       const src = fs.readFileSync(path.join(root, f), 'utf8');
       const to = (src.match(/err: 'timeout' \}\); \}, (\d+)\)/) || src.match(/fail\('timeout'\); \}, (\d+)\)/) || [])[1];
-      check(f + ' 逾時至少 30 秒', Number(to) >= 30000, '目前 ' + to);
+      check(f + ' 逾時至少 60 秒（實測 60 併發最慢 92 秒）', Number(to) >= 60000, '目前 ' + to);
     });
 
     ['vote.html', 'vote-admin.html'].forEach(f => {
@@ -563,7 +563,45 @@ function makeServer() {
     await ctx.close();
   }
 
-  /* ══════════ 15. 決賽：只清分數、保留名單 ══════════ */
+  /* ══════════ 15. 等後端時按鈕要說話 ══════════ */
+  {
+    // 後端慢的時候按鈕不出聲，大家就會一直按。實測 60 併發最慢 92 秒，這件事很要緊。
+    const server = makeServer(), calls = [];
+    server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['a - b', 'c - d'] });
+    const { ctx, page } = await phone(server, calls);
+
+    // 讓後端「慢」下來，才看得到等待中的樣子
+    await page.route('**/script.google.com/**', route => {
+      const p = Object.fromEntries(new URL(route.request().url()).searchParams);
+      calls.push(p);
+      const res = server.handle(p);
+      setTimeout(() => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript; charset=utf-8',
+        body: `${p.callback}(${JSON.stringify(res)});`
+      }), 1200);
+    });
+
+    const btn = await page.$('#pageSignup .ghost:has-text("重新整理名單")');
+    await btn.click();
+    await page.waitForTimeout(300);
+    eq(await btn.textContent(), '整理中…', '按下去馬上顯示整理中');
+    check('等待中不能重複按', await btn.isDisabled());
+    await page.waitForTimeout(1600);
+    eq(await btn.textContent(), '重新整理名單', '回來之後文字復原');
+    check('復原後可以再按', !(await btn.isDisabled()));
+
+    await tab(page, '成績'); await page.waitForTimeout(1600);
+    const rb = await page.$('.ghost:has-text("查詢成績")');
+    await rb.click(); await page.waitForTimeout(300);
+    eq(await rb.textContent(), '查詢中…', '查詢成績也有等待狀態');
+    await page.waitForTimeout(1600);
+    eq(await rb.textContent(), '查詢成績', '查完復原');
+
+    await ctx.close();
+  }
+
+  /* ══════════ 16. 決賽：只清分數、保留名單 ══════════ */
   {
     const server = makeServer(), calls = [];
     // 七位報名，總分刻意各不相同，前五名是 7,6,5,4,3 號
@@ -627,7 +665,7 @@ function makeServer() {
     await ctx.close();
   }
 
-  /* ══════════ 16. 控制台的清空要問兩次 ══════════ */
+  /* ══════════ 17. 控制台的清空要問兩次 ══════════ */
   {
     const server = makeServer(), calls = [];
     server.db.signups.push({ no: 1, dev: 'a', name: '甲', songs: ['a', 'b'] });

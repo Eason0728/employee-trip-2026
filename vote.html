@@ -80,6 +80,10 @@ body{
 .title{min-width:0}
 .head h1{margin:0}
 .head .sub{margin:2px 0 0}
+/* 麥克風跟著標題走：吃 currentColor，換主題不用另外改 */
+.mic{width:.95em;height:.95em;margin-left:.28em;vertical-align:-.09em;
+  fill:none;stroke:currentColor;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
 h1{font-size:22px;margin:22px 0 4px;font-weight:var(--h1-w);
    letter-spacing:var(--h1-ls);color:var(--h1-c);text-shadow:var(--h1-sh)}
 .sub{color:var(--faint);font-size:13.5px;margin:0 0 18px}
@@ -192,7 +196,12 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
     <img src="logos/yiwu.png" alt="一悟燒肉"   width="36" height="36">
   </a>
   <div class="title">
-    <h1>鼎鼎好聲音</h1>
+    <h1>鼎鼎好聲音<svg class="mic" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="9" y="2" width="6" height="11" rx="3"/>
+      <path d="M5 10v1a7 7 0 0 0 14 0v-1"/>
+      <line x1="12" y1="19" x2="12" y2="22"/>
+      <line x1="8" y1="22" x2="16" y2="22"/>
+    </svg></h1>
     <p class="sub">2026 鼎兆元員工旅遊　9/14 晚間</p>
   </div>
 </div>
@@ -231,7 +240,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
   <section class="card">
     <div class="label">已經報名的人</div>
     <div id="signupList" class="hint">按下面重新整理</div>
-    <button class="ghost" style="margin-top:12px" onclick="loadList(true)">重新整理名單</button>
+    <button class="ghost" style="margin-top:12px" onclick="loadList(true, this)">重新整理名單</button>
   </section>
 </div>
 
@@ -240,7 +249,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
   <section class="card">
     <div class="label">要評誰</div>
     <div class="people" id="people"><p class="hint" style="margin:0">讀取中…</p></div>
-    <button class="ghost" style="margin-top:12px" onclick="loadList(true)">重新整理名單</button>
+    <button class="ghost" style="margin-top:12px" onclick="loadList(true, this)">重新整理名單</button>
   </section>
 
   <section class="card" id="voteForm" hidden>
@@ -262,7 +271,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
   <section class="card">
     <div class="label">目前排名</div>
     <div id="rank" class="hint">按下面查詢</div>
-    <button class="ghost" style="margin-top:14px" onclick="loadRank()">查詢成績</button>
+    <button class="ghost" style="margin-top:14px" onclick="loadRank(this)">查詢成績</button>
     <p class="hint" id="rankNote"></p>
   </section>
 </div>
@@ -298,9 +307,10 @@ var seq = 0;
 function call(params, done, fail) {
   if (DEMO) { window.VOTE_DEMO(params, done, fail); return; }
   var cb = 'cb' + (++seq) + '_' + Date.now().toString(36);
-  // Apps Script 實測回應 2～20 秒都有（Google 的 /exec 轉址時快時慢），
-  // 15 秒會把其實成功的請求誤判成逾時，同仁就會一直重按。
-  var timer = setTimeout(function () { cleanup(); fail && fail('timeout'); }, 30000);
+  // 2026-09-10 對正式後端做 60 併發壓測：成功的請求裡有 12 筆超過 30 秒、最慢 92 秒。
+  // 逾時設太短會把「其實已經寫進去」的請求判成失敗，同仁一直重按反而更塞。
+  // 重按本身是安全的——計分時每支手機對同一個人只取第一筆。
+  var timer = setTimeout(function () { cleanup(); fail && fail('timeout'); }, 60000);
   function cleanup() {
     clearTimeout(timer);
     try { delete window[cb]; } catch (e) { window[cb] = undefined; }
@@ -335,7 +345,7 @@ var ERR = {
   noname      : '要填名字。',
   badno       : '找不到這位參賽者，重新整理名單試試。',
   badscore    : '三項都要打分數。',
-  busy        : '剛好很多人在送，等三秒再按一次。',
+  busy        : '大家同時在送，等個五秒再按一次就好。',
   timeout     : '等太久了。可能其實已經送出去——按下面「重新整理名單」看有沒有你，沒有再按一次。',
   network     : '連不上，檢查網路後再試一次。',
   server      : '伺服器出錯了，跟主持人說一聲。'
@@ -424,14 +434,30 @@ function submitSignup() {
 
 /* ══════════ 名單 ══════════ */
 var list = [];
-function loadList(force) {
+/** 按鈕進入等待狀態，回傳一個「復原」函式。後端慢的時候一定要有，不然大家會狂按 */
+function busy(btn, text) {
+  if (!btn) return function () {};
+  var was = btn.textContent, done = false;
+  btn.disabled = true;
+  btn.textContent = text;
+  return function () {
+    if (done) return;
+    done = true;
+    btn.disabled = false;
+    btn.textContent = was;
+  };
+}
+
+function loadList(force, btn) {
   if (list.length && !force) { renderPeople(); return; }
+  var idle = busy(btn, '整理中…');
   call({ action: 'list' }, function (res) {
+    idle();
     if (!res || !res.ok) { say(errText(res && res.err), 'bad'); return; }
     list = res.list || [];
     renderPeople();
     renderSignupList();
-  }, function (e) { say(errText(e), 'bad'); });
+  }, function (e) { idle(); say(errText(e), 'bad'); });
 }
 
 function renderSignupList() {
@@ -529,7 +555,7 @@ function submitVote() {
   if (v.some(function (x) { return !x; })) { say(ERR.badscore, 'bad'); return; }
 
   var btn = document.getElementById('sendVote');
-  btn.disabled = true; btn.textContent = '送出中…';
+  btn.disabled = true; btn.textContent = '送出中…人多時要等一下';
   var params = { action: 'vote', dev: dev, no: picked };
   v.forEach(function (n, i) { params['s' + (i + 1)] = n; });
 
@@ -547,11 +573,13 @@ function submitVote() {
 }
 
 /* ══════════ 成績 ══════════ */
-function loadRank() {
+function loadRank(btn) {
   var box = document.getElementById('rank');
   var note = document.getElementById('rankNote');
+  var idle = busy(btn, '查詢中…');
   box.textContent = '查詢中…';
   call({ action: 'rank' }, function (res) {
+    idle();
     if (!res || !res.ok) { box.textContent = ''; say(errText(res && res.err), 'bad'); return; }
     if (!res.published) {
       box.innerHTML = '<p class="hint" style="margin:0">主持人還沒公佈成績。</p>';
@@ -566,7 +594,7 @@ function loadRank() {
         + '<span class="avg">' + r.avg.toFixed(2) + '</span></div>';
     }).join('') + '</div>';
     note.textContent = '平均分高的在前；同分時評分人數多的在前。';
-  }, function (e) { box.textContent = ''; say(errText(e), 'bad'); });
+  }, function (e) { idle(); box.textContent = ''; say(errText(e), 'bad'); });
 }
 
 /* ══════════ 啟動 ══════════ */

@@ -122,7 +122,7 @@ function apiSignup(p) {
   if (songs.length < MIN_SONGS) return { ok: false, err: 'fewsongs', need: MIN_SONGS };
 
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(8000); } catch (e) { return { ok: false, err: 'busy' }; }
+  try { lock.waitLock(30000); } catch (e) { return { ok: false, err: 'busy' }; }
   try {
     var sh = sheetS();
     var last = sh.getLastRow();
@@ -199,9 +199,20 @@ function apiVote(p) {
   }
 
   var sum = v.reduce(function (a, b) { return a + b; }, 0);
-  // 不查重複——查就得整張表讀一次，60 人同時送會塞爆。計分時每個裝置只取第一筆。
   var rd = getSettings().round;
-  sheetV().appendRow([new Date(), dev, no, rd].concat(v).concat([sum]));
+
+  // ⚠⚠ 一定要鎖。appendRow **不是**原子操作：60 支手機同時送的時候，
+  // 多個執行會讀到同一個「最後一列」然後寫到同一列互相蓋掉——
+  // 每個執行都以為自己成功了，同仁畫面上也顯示「記錄好了」，
+  // 但試算表只留下最後一個。2026-09-10 實測 60 筆併發只進 22 筆。
+  // 等不到鎖就回 busy，讓同仁自己再按一次（重複的票計分時只取第一筆，安全）。
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) { return { ok: false, err: 'busy' }; }
+  try {
+    sheetV().appendRow([new Date(), dev, no, rd].concat(v).concat([sum]));
+  } finally {
+    lock.releaseLock();
+  }
   return { ok: true, no: no, round: rd, scores: v, sum: sum };
 }
 

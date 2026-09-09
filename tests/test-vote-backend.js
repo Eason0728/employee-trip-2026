@@ -67,7 +67,12 @@ function makeEnv() {
       create: () => book            // SS_ID 留空時 ss() 會自己開一份
     },
     Logger: { log: () => {} },
-    LockService: { getScriptLock: () => ({ waitLock: () => true, releaseLock: () => {} }) },
+    LockService: {
+      getScriptLock: () => ({
+        waitLock: () => { if (env.__lockBusy) throw new Error('timeout'); return true; },
+        releaseLock: () => { env.__lockReleased = (env.__lockReleased || 0) + 1; }
+      })
+    },
     ContentService: {
       MimeType: { JAVASCRIPT: 'js', JSON: 'json' },
       createTextOutput: t => ({ _t: t, _m: null, setMimeType(m) { this._m = m; return this; } })
@@ -489,7 +494,32 @@ function signup(api, name, songs, d) {
   eq(api.computeRank().rank[0].total, 15, '初賽分數原樣回來');
 }
 
-/* ══════════ 17. 欄位改版時的表頭 ══════════ */
+/* ══════════ 17. 寫入一定要鎖 ══════════ */
+{
+  // ⚠ 2026-09-10 實測：60 支手機同時送，60 筆全回 ok，試算表只進 22 筆。
+  //   appendRow 不是原子操作，並發時會讀到同一個「最後一列」互相覆蓋。
+  //   拿不到鎖時要回 busy，不能默默寫下去。
+  const { env, api } = setup({ voteOpen: true });
+  signup(api, '甲');
+  const before = env.__sheets['評分紀錄'].rows.length;
+
+  env.__lockBusy = true;
+  eq(api.apiVote({ dev: dev(1), no: 1, s1: 5, s2: 5, s3: 5 }).err, 'busy', '拿不到鎖時回 busy');
+  eq(env.__sheets['評分紀錄'].rows.length, before, '⚠ 拿不到鎖就一列都不能寫');
+
+  env.__lockBusy = false;
+  eq(api.apiVote({ dev: dev(1), no: 1, s1: 5, s2: 5, s3: 5 }).ok, true, '拿到鎖就寫得進去');
+  eq(env.__sheets['評分紀錄'].rows.length, before + 1, '寫了一列');
+  ok(env.__lockReleased > 0, '鎖有放掉（不放的話下一個人永遠等不到）');
+
+  // 報名同樣要鎖
+  const { env: e2, api: a2 } = setup();
+  e2.__lockBusy = true;
+  eq(signup(a2, '乙').err, 'busy', '報名拿不到鎖也回 busy');
+  eq(a2.signupCount(), 0, '被擋的報名沒有寫進去');
+}
+
+/* ══════════ 18. 欄位改版時的表頭 ══════════ */
 {
   // 分頁已經存在、但表頭是舊版且還沒有資料 → 應該自動換成新表頭
   const env = makeEnv();
@@ -513,7 +543,7 @@ function signup(api, name, songs, d) {
   eq(env2.__sheets['評分紀錄'].rows.length, 2, '既有的資料列還在');
 }
 
-/* ══════════ 18. 決賽的邊界 ══════════ */
+/* ══════════ 19. 決賽的邊界 ══════════ */
 {
   const { api } = setup({ voteOpen: true });
   signup(api, '甲');
@@ -539,7 +569,7 @@ function signup(api, name, songs, d) {
   eq(r.settings.finalists.length, 0, 'reset 清掉決賽名單');
 }
 
-/* ══════════ 19. 參賽者自己也能被評 ══════════ */
+/* ══════════ 20. 參賽者自己也能被評 ══════════ */
 {
   const { api } = setup({ voteOpen: true });
   const me = dev(91);
