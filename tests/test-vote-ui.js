@@ -152,6 +152,16 @@ function makeServer() {
     eq((await page.$$('.song-row')).length, 2, '一開始就有兩個歌曲欄');
     check('沒有示範模式那一條', (await page.$$('#demoBar')).length === 0);
 
+    // 三個品牌 logo 是主持人的隱藏入口：看起來只是裝飾，密碼才是真正那道關
+    check('標題左邊有三個 logo', (await page.$$('.brand img')).length === 3);
+    eq(await page.$eval('.brand', e => e.getAttribute('href')), 'vote-admin.html',
+       'logo 連到主持人控制台');
+    const logoOK = await page.$$eval('.brand img',
+      els => els.every(i => i.complete && i.naturalWidth > 0));
+    check('三張 logo 都載得到（檔案有進版控）', logoOK);
+    check('logo 不占版面寬度到擠壞標題',
+      await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
+
     // 裝置編號：一支手機一個，重整不變
     const dev1 = await page.evaluate(() => localStorage.getItem('ddgs-dev'));
     check('第一次開頁就產生裝置編號', !!dev1 && dev1.length > 8);
@@ -467,6 +477,8 @@ function makeServer() {
     const { ctx, page } = await phone(server, calls, HOST + '/vote-admin.html');
 
     check('沒登入前看不到控制項', await page.$eval('#panel', e => e.hidden));
+    eq(await page.$eval('.sub a', e => e.getAttribute('href')), 'vote.html',
+       '同仁誤點 logo 進來時回得去');
     await page.fill('#pw', '亂打'); await page.click('#enter'); await page.waitForTimeout(400);
     check('密碼錯有提示', (await page.textContent('#msg')).includes('通行碼不對'));
     check('密碼錯進不去', await page.$eval('#panel', e => e.hidden));

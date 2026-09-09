@@ -69,6 +69,17 @@ body{
   padding:0 16px 48px;max-width:520px;margin:0 auto;
   -webkit-font-smoothing:antialiased;
 }
+/* 標題列：左邊三個品牌 logo（同時是主持人入口），右邊標題 */
+.head{display:flex;align-items:center;gap:11px;margin:20px 0 18px}
+.brand{display:flex;align-items:center;gap:4px;flex:none;
+  text-decoration:none;padding:3px;margin:-3px;border-radius:10px}
+/* 三個 logo 底色不同（紅／青／白），白底那張在白頁上沒有邊界，補一圈極淡的框才一致 */
+.brand img{height:36px;width:auto;display:block;border-radius:8px;
+  box-shadow:0 0 0 1px rgba(0,0,0,.07)}
+.brand:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.title{min-width:0}
+.head h1{margin:0}
+.head .sub{margin:2px 0 0}
 h1{font-size:22px;margin:22px 0 4px;font-weight:var(--h1-w);
    letter-spacing:var(--h1-ls);color:var(--h1-c);text-shadow:var(--h1-sh)}
 .sub{color:var(--faint);font-size:13.5px;margin:0 0 18px}
@@ -172,8 +183,19 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
 </head>
 <body>
 
-<h1>鼎鼎好聲音</h1>
-<p class="sub">2026 鼎兆元員工旅遊　9/14 晚間</p>
+<div class="head">
+  <!-- 三個品牌 logo 同時是主持人入口。看起來只是裝飾，同仁不會想點；
+       就算誤點也只會看到通行碼那一關，進不去。 -->
+  <a class="brand" href="vote-admin.html" aria-label="主持人控制台">
+    <img src="logos/mala.png" alt="麻的小辛辣" width="36" height="36">
+    <img src="logos/mzt.png"  alt="墨竹亭"     width="38" height="36">
+    <img src="logos/yiwu.png" alt="一悟燒肉"   width="36" height="36">
+  </a>
+  <div class="title">
+    <h1>鼎鼎好聲音</h1>
+    <p class="sub">2026 鼎兆元員工旅遊　9/14 晚間</p>
+  </div>
+</div>
 
 <div class="tabs" role="tablist">
   <button role="tab" id="tabSignup" aria-selected="true"  onclick="go('signup')">報名</button>
