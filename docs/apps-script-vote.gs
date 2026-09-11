@@ -83,7 +83,8 @@ function getSettings() {
     voteOpen  : p.getProperty('voteOpen')   === '1',   // 預設還沒開放評分
     published : p.getProperty('published')  === '1',   // 成績是否已公佈
     round     : Number(p.getProperty('round') || 1),   // 1＝初賽，2＝決賽
-    finalists : finalistList()                         // 決賽名單（初賽時是空的）
+    finalists : finalistList(),                        // 決賽名單（初賽時是空的）
+    muted     : mutedList()                            // 個別關掉評分的編號
   };
 }
 
@@ -94,6 +95,31 @@ function finalistList() {
     var a = raw ? JSON.parse(raw) : [];
     return Object.prototype.toString.call(a) === '[object Array]' ? a : [];
   } catch (e) { return []; }
+}
+
+/** 被主持人單獨關掉評分的參賽編號。空的＝每個人都可以被評。 */
+function mutedList() {
+  try {
+    var raw = props().getProperty('muted');
+    var a = raw ? JSON.parse(raw) : [];
+    if (Object.prototype.toString.call(a) !== '[object Array]') return [];
+    return a.map(Number).filter(function (n) { return n > 0; });
+  } catch (e) { return []; }
+}
+
+/**
+ * 把一串編號寫回指令碼屬性；空的就直接刪掉屬性。
+ * **不排序**——決賽名單是按名次存的，順序就是上台順序，重排會把它打亂。
+ */
+function saveNos(key, arr) {
+  var seen = {}, out = [];
+  arr.forEach(function (n) {
+    n = Number(n);
+    if (n > 0 && !seen[n]) { seen[n] = 1; out.push(n); }
+  });
+  if (out.length) props().setProperty(key, JSON.stringify(out));
+  else props().deleteProperty(key);
+  return out;
 }
 
 function apiState() {
@@ -135,7 +161,7 @@ function apiSignup(p) {
         }
       }
     }
-    var no = last;                              // 標題列佔 1，所以 last 就是下一個編號
+    var no = nextNo();                          // 現有最大編號 +1
     sh.appendRow([new Date(), dev, no, name, songs.join(' ｜ ')]);
     return { ok: true, no: no, name: name, songs: songs };
   } finally {
@@ -154,6 +180,12 @@ function apiList() {
   if (fin.length) {
     list = list.filter(function (x) { return fin.indexOf(x.no) >= 0; });
     list.sort(function (a, b) { return fin.indexOf(a.no) - fin.indexOf(b.no); });
+  }
+  // 被單獨關掉評分的人**留在名單上**，只是標記起來、同仁按不下去。
+  // 直接讓他從名單消失的話，已經評過他的人會以為自己的分數不見了。
+  var mute = mutedList();
+  if (mute.length) {
+    list.forEach(function (x) { if (mute.indexOf(x.no) >= 0) x.off = true; });
   }
   return { ok: true, list: list };
 }
@@ -174,6 +206,26 @@ function allSignups() {
   });
 }
 
+/** 試算表上現有的參賽編號，照列的順序（刪過人的話會有缺號） */
+function signupNos() {
+  var sh = sheetS();
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  return sh.getRange(2, 3, last - 1, 1).getValues()
+           .map(function (r) { return Number(r[0]); });
+}
+
+/**
+ * 下一個參賽編號＝現有最大的 +1。
+ * ⚠ 不可以改回用「列數」算：主持人單獨刪掉一位之後，後面的列會往上遞補，
+ *   用列數算就會把已經發出去的編號再發一次——兩個人共用一個編號，票全混在一起。
+ */
+function nextNo() {
+  var max = 0;
+  signupNos().forEach(function (n) { if (n > max) max = n; });
+  return max + 1;
+}
+
 function signupCount() {
   var sh = sheetS();
   return Math.max(0, sh.getLastRow() - 1);
@@ -190,7 +242,11 @@ function apiVote(p) {
   var v   = CRITERIA.map(function (_, i) { return Number(p['s' + (i + 1)]); });
 
   if (!dev) return { ok: false, err: 'nodev' };
-  if (!(no >= 1 && no <= signupCount())) return { ok: false, err: 'badno' };
+  // 用實際的編號清單比對，不要用「筆數」——刪過人之後編號會有缺口，
+  // 拿筆數當上限的話最大的那個編號會被誤判成不存在。
+  if (signupNos().indexOf(no) < 0) return { ok: false, err: 'badno' };
+  // 主持人把這一位的評分單獨關掉了
+  if (mutedList().indexOf(no) >= 0) return { ok: false, err: 'muted' };
   // 決賽時只收晉級者的票；沒晉級的人就算硬送也不算
   var fin = finalistList();
   if (fin.length && fin.indexOf(no) < 0) return { ok: false, err: 'noteligible' };
@@ -260,6 +316,7 @@ function computeRank(round) {
       var rd = Number(r[2]) || 1;     // 舊資料沒有輪次欄，一律當初賽
       var sum = Number(r[6]);
       if (rd !== want) return;        // 不是這一輪的票就不算
+      if (!(no in names)) return;     // 報名那列已經被主持人刪掉了，這些票不算
       var key = dev + '#' + no;
       if (seen[key]) return;          // 同一裝置對同一人只取第一筆
       seen[key] = 1;
@@ -295,6 +352,7 @@ function apiAdmin(p) {
   if (String(p.pw || '') !== ADMIN_PW) return { ok: false, err: 'badpw' };
   var pr = props();
   var cmd = String(p.cmd || '');
+  var removed = null;          // removeOne 用：把刪掉的是誰回給主持人，畫面才講得出名字
 
   switch (cmd) {
     case 'signupOpen' : pr.setProperty('signupOpen', '1'); break;
@@ -337,6 +395,43 @@ function apiAdmin(p) {
       pr.setProperty('published', '0');
       break;
     }
+    case 'muteOne':
+    case 'unmuteOne': {
+      // 單獨開關某一位的評分。名單照舊送給同仁，只是標記成暫停、送不出分數。
+      var mno = Number(p.no);
+      if (signupNos().indexOf(mno) < 0) return { ok: false, err: 'badno' };
+      var cur = mutedList();
+      saveNos('muted', cmd === 'muteOne'
+        ? cur.concat([mno])
+        : cur.filter(function (n) { return n !== mno; }));
+      break;
+    }
+    case 'removeOne': {
+      // 單獨刪掉一位參賽者：報名那一列真的刪掉，決賽名單與暫停名單也跟著把他拿掉。
+      // **評分紀錄不動**——原始資料留著才查得出當時發生過什麼事；
+      // 計分時 computeRank() 會跳過名單上已經不存在的編號，所以名次不受影響。
+      var dno = Number(p.no);
+      var lk = LockService.getScriptLock();
+      try { lk.waitLock(30000); } catch (e) { return { ok: false, err: 'busy' }; }
+      try {
+        var shs = sheetS();
+        var lr = shs.getLastRow();
+        if (lr < 2) return { ok: false, err: 'badno' };
+        var col = shs.getRange(2, 3, lr - 1, 2).getValues();   // 編號 姓名
+        var at = -1;
+        for (var j = 0; j < col.length; j++) {
+          if (Number(col[j][0]) === dno) { at = j; break; }
+        }
+        if (at < 0) return { ok: false, err: 'badno' };
+        removed = { no: dno, name: String(col[at][1]) };
+        shs.deleteRow(at + 2);                                 // +2＝跳過表頭、索引轉列號
+      } finally {
+        lk.releaseLock();
+      }
+      saveNos('finalists', finalistList().filter(function (n) { return n !== dno; }));
+      saveNos('muted',     mutedList().filter(function (n) { return n !== dno; }));
+      break;
+    }
     case 'reset':
       // 清掉所有報名與評分，設定歸零。現場重來一輪才用，按下去沒有復原。
       pr.deleteProperty('signupOpen');
@@ -344,6 +439,7 @@ function apiAdmin(p) {
       pr.deleteProperty('published');
       pr.deleteProperty('round');
       pr.deleteProperty('finalists');
+      pr.deleteProperty('muted');
       [SHEET_S, SHEET_V].forEach(function (n) {
         var sh = ss().getSheetByName(n);
         if (sh && sh.getLastRow() > 1) {
@@ -362,6 +458,7 @@ function apiAdmin(p) {
     voters: full.voters, rank: full.rank, signups: apiList().list,
     round: st2.round
   };
+  if (removed) out.removed = removed;
   // 決賽時把初賽名次一起送回去，主持人才對得起來誰是怎麼晉級的
   if (st2.round > 1) out.prelim = computeRank(1).rank;
   return out;

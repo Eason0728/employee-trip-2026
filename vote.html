@@ -156,6 +156,10 @@ input:focus{outline:2px solid var(--accent);outline-offset:1px}
 .person[aria-pressed=true] .no i,
 .person[aria-pressed=true] .who i{color:var(--on-accent2)}
 .person.done{border-style:dashed}
+/* 主持人單獨關掉某一位的評分：留在名單上但按不下去。
+   讓他直接消失的話，已經評過他的人會以為自己的分數不見了。 */
+.person.off{opacity:.5}
+.person .paused{font-size:13px;color:var(--dim);font-weight:600;flex:none}
 
 /* 評分列 */
 .crit{margin-bottom:20px}
@@ -350,6 +354,8 @@ var ERR = {
   noname      : '要填名字。',
   badno       : '找不到這位參賽者，重新整理名單試試。',
   badscore    : '三項都要打分數。',
+  muted       : '主持人暫時關掉了這一位的評分，按下面「重新整理名單」看現在能評誰。',
+  noteligible : '這一位沒有進決賽，不用評了。按下面「重新整理名單」看決賽名單。',
   busy        : '大家同時在送，等個五秒再按一次就好。',
   timeout     : '等太久了。可能其實已經送出去——按下面「重新整理名單」看有沒有你，沒有再按一次。',
   network     : '連不上，檢查網路後再試一次。',
@@ -496,13 +502,17 @@ function renderPeople() {
   box.innerHTML = '';
   list.forEach(function (p) {
     var done = !!voted[p.no];
+    var off  = !!p.off;                       // 主持人把這一位的評分關掉了
     var b = document.createElement('button');
-    b.className = 'person' + (done ? ' done' : '');
+    b.className = 'person' + (done ? ' done' : '') + (off ? ' off' : '');
+    // 已經評過的人還是點得進去看自己打了幾分，只有「還沒評又被關掉」才按不下去
+    b.disabled = off && !done;
     b.setAttribute('aria-pressed', String(picked === p.no));
     b.innerHTML = '<span class="no"><b>' + p.no + '</b><i>號選手</i></span>'
       + '<span class="who"><b>' + esc(p.name) + '</b><i>' + esc(p.songs.join('、')) + '</i></span>'
-      + (done ? '<span class="got">已評 ' + sum(voted[p.no]) + '</span>' : '');
-    b.onclick = function () { pick(p.no); };
+      + (done ? '<span class="got">已評 ' + sum(voted[p.no]) + '</span>'
+              : (off ? '<span class="paused">暫停評分</span>' : ''));
+    b.onclick = function () { if (off && !done) return; pick(p.no); };
     box.appendChild(b);
   });
 }
@@ -534,6 +544,8 @@ document.getElementById('crits').addEventListener('click', function (e) {
 function pick(no) {
   var p = list.filter(function (x) { return x.no === no; })[0];
   if (!p) return;
+  // 名單重新整理之後才被關掉的情況：不要讓表單開著，送出去也只會被後端擋掉
+  if (p.off && !voted[no]) { say(ERR.muted, 'wait'); return; }
   picked = no;
   renderPeople();
   var who = no + ' 號選手　' + p.name;

@@ -22,7 +22,7 @@
   }
   function fresh() {
     return {
-      signups: [], votes: [], round: 1, finalists: [],
+      signups: [], votes: [], round: 1, finalists: [], muted: [],
       settings: { signupOpen: true, voteOpen: true, published: false }
     };
   }
@@ -30,6 +30,7 @@
   function migrate(db) {
     if (!db.round) db.round = 1;
     if (!db.finalists) db.finalists = [];
+    if (!db.muted) db.muted = [];
     return db;
   }
   function save(db) { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
@@ -44,6 +45,22 @@
       .filter(function (x) { return x; });
   }
 
+  /** 下一個編號＝現有最大 +1。刪過人之後不能用筆數算，會撞號。 */
+  function nextNo(db) {
+    var max = 0;
+    db.signups.forEach(function (s) { if (s.no > max) max = s.no; });
+    return max + 1;
+  }
+
+  /** 名單送出去的樣子：被單獨關掉評分的人留著，只是標記 off */
+  function listOut(db) {
+    return visible(db).map(function (s) {
+      var o = { no: s.no, name: s.name, songs: s.songs };
+      if (db.muted.indexOf(s.no) >= 0) o.off = true;
+      return o;
+    });
+  }
+
   /**
    * 算分。預設算「目前這一輪」；傳 want 可以回頭查初賽。
    * 名單一律取全部——查初賽名次時要看得到被淘汰的人。
@@ -54,6 +71,7 @@
     db.signups.forEach(function (s) { names[s.no] = s.name; });
     db.votes.forEach(function (v) {
       if ((v.round || 1) !== want) return;      // 不是這一輪的票就不算
+      if (!(v.no in names)) return;             // 報名那列已經刪掉了，票不算
       var key = v.dev + '#' + v.no;
       if (seen[key]) return;                    // 同裝置對同一人只取第一筆
       seen[key] = 1;
@@ -81,7 +99,8 @@
       voteOpen  : db.settings.voteOpen,
       published : db.settings.published,
       round     : db.round,
-      finalists : db.finalists.slice()
+      finalists : db.finalists.slice(),
+      muted     : db.muted.slice()
     };
   }
 
@@ -111,16 +130,14 @@
         if (db.signups.some(function (s) { return s.name === name; })) {
           return reply(done, { ok: false, err: 'dupname', name: name });
         }
-        var no = db.signups.length + 1;
+        var no = nextNo(db);
         db.signups.push({ no: no, dev: p.dev, name: name, songs: songs });
         save(db);
         return reply(done, { ok: true, no: no, name: name, songs: songs });
       }
 
       case 'list':
-        return reply(done, { ok: true, list: visible(db).map(function (s) {
-          return { no: s.no, name: s.name, songs: s.songs };
-        }) });
+        return reply(done, { ok: true, list: listOut(db) });
 
       case 'vote': {
         if (!st.voteOpen) return reply(done, { ok: false, err: 'voteClosed' });
@@ -133,6 +150,7 @@
         if (db.finalists.length && db.finalists.indexOf(vno) < 0) {
           return reply(done, { ok: false, err: 'noteligible' });
         }
+        if (db.muted.indexOf(vno) >= 0) return reply(done, { ok: false, err: 'muted' });
         var v = CRITERIA.map(function (_, i) { return Number(p['s' + (i + 1)]); });
         if (v.some(function (x) { return !(x >= 1 && x <= 5); })) {
           return reply(done, { ok: false, err: 'badscore' });
@@ -183,18 +201,37 @@
           db.votes = db.votes.filter(function (v2) { return (v2.round || 1) !== db.round; });
           st.published = false;
         }
+        var removed = null;
+        if (cmd === 'muteOne' || cmd === 'unmuteOne') {
+          var mno = Number(p.no);
+          if (!db.signups.some(function (s) { return s.no === mno; })) {
+            return reply(done, { ok: false, err: 'badno' });
+          }
+          db.muted = cmd === 'muteOne'
+            ? (db.muted.indexOf(mno) >= 0 ? db.muted : db.muted.concat([mno]))
+            : db.muted.filter(function (n) { return n !== mno; });
+        }
+        if (cmd === 'removeOne') {
+          var dno = Number(p.no);
+          var hit = db.signups.filter(function (s) { return s.no === dno; })[0];
+          if (!hit) return reply(done, { ok: false, err: 'badno' });
+          removed = { no: dno, name: hit.name };
+          db.signups = db.signups.filter(function (s) { return s.no !== dno; });
+          db.finalists = db.finalists.filter(function (n) { return n !== dno; });
+          db.muted     = db.muted.filter(function (n) { return n !== dno; });
+          // 票不刪——rank() 只認名單上還在的人，所以不會影響名次
+        }
         if (cmd === 'reset') db = fresh();
 
         save(db);
         var rr = rank(db);
         var out = {
           ok: true, settings: settingsOf(db),
-          signups: visible(db).map(function (s) {
-            return { no: s.no, name: s.name, songs: s.songs };
-          }),
+          signups: listOut(db),
           published: db.settings.published, voters: rr.voters, rank: rr.rank,
           round: db.round
         };
+        if (removed) out.removed = removed;
         if (db.round > 1) out.prelim = rank(db, 1).rank;
         return reply(done, out);
       }

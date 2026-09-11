@@ -65,6 +65,13 @@ td.no{font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums}
 tr.top td{background:#FFF9E0}
 tr.top td.no{color:#8A6800}
 td .songs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
+/* 每一列右邊的兩顆小按鈕：單獨開關評分、單獨刪人 */
+td.ctl,th.ctl{text-align:right;white-space:nowrap;padding-left:4px}
+button.tiny{font-size:13px;padding:7px 10px;border-radius:11px;letter-spacing:.3px;margin-left:6px}
+/* 淡掉的是名字那兩格，按鈕不能跟著淡——淡掉就按不準了 */
+tr.muted td:not(.ctl){opacity:.5}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;
+     border:2px solid var(--red);background:var(--red-soft);color:#B32020;margin-left:6px}
 
 .msg{border-radius:14px;padding:12px 14px;font-size:15px;margin-bottom:14px;display:none;
      border:2px solid transparent}
@@ -166,7 +173,9 @@ td .songs{display:block;font-size:12.5px;color:var(--faint);margin-top:2px}
     <div id="list"><p class="hint">還沒有人報名。</p></div>
     <button class="noprint" id="refresh" style="margin-top:12px">重新整理</button>
     <p class="hint noprint" style="margin-top:10px">
-      叫人上台照這個順序。每人報兩首以上是怕現場點不到歌，唱哪首由參賽者自己決定。
+      叫人上台照這個順序。每人報兩首以上是怕現場點不到歌，唱哪首由參賽者自己決定。<br>
+      <b>暫停</b>：那一位還留在同仁的名單上，但變灰色、送不出分數；按<b>開放</b>就回來，已經收到的分數不動。<br>
+      <b>刪除</b>：報名那一列真的刪掉，他的分數就不列入名次了。沒有復原，編號也不會再發給別人。
     </p>
   </section>
 
@@ -218,6 +227,7 @@ var API   = window.VOTE_API || 'https://script.google.com/macros/s/AKfycbwQMUeaM
 var DEMO  = (API === UNSET) && !!window.VOTE_DEMO;
 
 var pw = '', timer = null;
+var rowBusy = 0;      // >0 代表有某一列的指令在等後端，這時候不重畫報名名單
 
 /* ══════════ JSONP（與 vote.html 同一套） ══════════ */
 var seq = 0;
@@ -283,12 +293,24 @@ function busy(btn, text) {
   };
 }
 
+/**
+ * cmd 可以是字串（'voteOpen'），也可以是 { cmd:'muteOne', no:3 }——針對單一參賽者的指令。
+ * 後者在等後端的期間會把名單那張表凍住，免得 5 秒輪詢把按下去的那顆按鈕換掉。
+ */
 function admin(cmd, cb, btn, waitText) {
+  var q = { action: 'admin', pw: pw, cmd: 'status' };
+  if (cmd && typeof cmd === 'object') { q.cmd = cmd.cmd; q.no = cmd.no; }
+  else { q.cmd = cmd || 'status'; }
+  var row = (q.no != null);
+  if (row) rowBusy++;
   var idle = busy(btn, waitText || '處理中');
-  call({ action: 'admin', pw: pw, cmd: cmd || 'status' }, function (res) {
+  call(q, function (res) {
     idle();
+    if (row) rowBusy--;
     if (res && res.ok) { render(res); if (cb) cb(res); return; }
     if (res && res.err === 'badpw') say('通行碼不對。', 'bad');
+    else if (res && res.err === 'badno') say('名單上找不到這一位，重新整理看看。', 'bad');
+    else if (res && res.err === 'busy') say('後端正忙，等幾秒再按一次。', 'bad');
     else say('連不上伺服器，再按一次。', 'bad');
     if (cb) cb(res);
   });
@@ -328,17 +350,32 @@ function render(res) {
 
   // 報名名單
   var list = res.signups || [];
-  document.getElementById('cnt').textContent = list.length ? '共 ' + list.length + ' 位' : '';
-  var box = document.getElementById('list');
-  if (!list.length) {
-    box.innerHTML = '<p class="hint">還沒有人報名。</p>';
-  } else {
-    box.innerHTML = '<table><thead><tr><th class="n">編號</th><th>參賽者與歌單</th></tr></thead><tbody>'
-      + list.map(function (p) {
-          return '<tr><td class="n no">' + p.no + '</td><td>' + esc(p.name)
-            + '<span class="songs">' + esc((p.songs || []).join('　｜　')) + '</span></td></tr>';
-        }).join('')
-      + '</tbody></table>';
+  // 有某一列的按鈕正在等後端時不重畫這張表——重畫會把那顆按鈕連同「處理中」一起換掉，
+  // 主持人看到按鈕彈回原樣就會再按一次。等那個指令回來自然會帶著新資料重畫。
+  if (!rowBusy) {
+    document.getElementById('cnt').textContent = list.length ? '共 ' + list.length + ' 位' : '';
+    var box = document.getElementById('list');
+    if (!list.length) {
+      box.innerHTML = '<p class="hint">還沒有人報名。</p>';
+    } else {
+      box.innerHTML = '<table><thead><tr><th class="n">編號</th><th>參賽者與歌單</th>'
+        + '<th class="ctl noprint">這一位</th></tr></thead><tbody>'
+        + list.map(function (p) {
+            var off = !!p.off;
+            return '<tr' + (off ? ' class="muted"' : '') + '>'
+              + '<td class="n no">' + p.no + '</td>'
+              + '<td>' + esc(p.name) + (off ? '<span class="tag">暫停中</span>' : '')
+              + '<span class="songs">' + esc((p.songs || []).join('　｜　')) + '</span></td>'
+              + '<td class="ctl noprint">'
+              +   '<button class="tiny ' + (off ? 'go' : 'stop') + '" data-no="' + p.no + '" '
+              +     'data-cmd="' + (off ? 'unmuteOne' : 'muteOne') + '">'
+              +     (off ? '開放' : '暫停') + '</button>'
+              +   '<button class="tiny danger" data-no="' + p.no + '" data-cmd="removeOne" '
+              +     'data-name="' + esc(p.name) + '">刪除</button>'
+              + '</td></tr>';
+          }).join('')
+        + '</tbody></table>';
+    }
   }
 
   // 即時排名
@@ -423,6 +460,30 @@ document.getElementById('pw').addEventListener('keydown', function (e) {
 
 document.getElementById('refresh').addEventListener('click', function () {
   admin('status', null, this, '整理中');
+});
+
+// 名單那張表每次都重畫，事件掛在容器上才不會跟著被換掉
+document.getElementById('list').addEventListener('click', function (e) {
+  var b = e.target.closest('button[data-cmd]');
+  if (!b) return;
+  var no = Number(b.dataset.no), cmd = b.dataset.cmd;
+
+  if (cmd === 'removeOne') {
+    if (!confirm('刪掉 ' + no + ' 號 ' + b.dataset.name + '？\n'
+               + '報名那一列會真的刪掉，他收到的分數也不再列入名次。\n'
+               + '沒有復原，這個編號之後也不會再發給別人。')) return;
+    admin({ cmd: cmd, no: no }, function (res) {
+      if (res && res.ok && res.removed) {
+        say('已刪掉 ' + res.removed.no + ' 號 ' + res.removed.name + '。');
+      }
+    }, b, '刪除中');
+    return;
+  }
+  admin({ cmd: cmd, no: no }, function (res) {
+    if (res && res.ok) {
+      say(cmd === 'muteOne' ? ('已暫停 ' + no + ' 號的評分。') : ('已開放 ' + no + ' 號的評分。'));
+    }
+  }, b, cmd === 'muteOne' ? '暫停中' : '開放中');
 });
 
 document.getElementById('toFinals').addEventListener('click', function () {

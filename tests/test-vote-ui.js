@@ -30,13 +30,20 @@ function eq(a, b, name) { check(name, a === b, `得到 ${JSON.stringify(a)}，�
 
 /* ══════════ 假後端：形狀照 apps-script-vote.gs ══════════ */
 function makeServer() {
-  const db = { signups: [], votes: [], round: 1, finalists: [],
+  const db = { signups: [], votes: [], round: 1, finalists: [], muted: [],
                set: { signupOpen: true, voteOpen: false, published: false } };
   const CRIT = ['唱功', '感情', '炒熱度'];
 
   const visible = () => db.finalists.length
     ? db.finalists.map(n => db.signups.find(s => s.no === n)).filter(Boolean)
     : db.signups;
+  // 被單獨關掉評分的人留在名單上，只是帶 off 記號（與 .gs 的 apiList 一致）
+  const listOut = () => visible().map(s => {
+    const o = { no: s.no, name: s.name, songs: s.songs };
+    if (db.muted.indexOf(s.no) >= 0) o.off = true;
+    return o;
+  });
+  const nextNo = () => db.signups.reduce((m, s) => Math.max(m, s.no), 0) + 1;
 
   function rank(want) {
     want = want || db.round;
@@ -44,6 +51,7 @@ function makeServer() {
     db.signups.forEach(s => { names[s.no] = s.name; });   // 查歷史輪次要看得到被淘汰的人
     db.votes.forEach(v => {
       if ((v.round || 1) !== want) return;
+      if (!(v.no in names)) return;        // 報名那列已經刪掉了，票不算
       const key = v.dev + '#' + v.no;
       if (seen[key]) return;
       seen[key] = 1; devs[v.dev] = 1;
@@ -76,18 +84,19 @@ function makeServer() {
           if (!name) return { ok: false, err: 'noname' };
           if (songs.length < 2) return { ok: false, err: 'fewsongs', need: 2 };
           if (db.signups.some(s => s.name === name)) return { ok: false, err: 'dupname', name };
-          const no = db.signups.length + 1;
+          const no = nextNo();
           db.signups.push({ no, dev: p.dev, name, songs });
           return { ok: true, no, name, songs };
         }
         case 'list':
-          return { ok: true, list: visible().map(s => ({ no: s.no, name: s.name, songs: s.songs })) };
+          return { ok: true, list: listOut() };
         case 'vote': {
           if (!db.set.voteOpen) return { ok: false, err: 'voteClosed' };
           const no = Number(p.no);
           if (!db.signups.some(s => s.no === no)) return { ok: false, err: 'badno' };
           if (db.finalists.length && db.finalists.indexOf(no) < 0)
             return { ok: false, err: 'noteligible' };
+          if (db.muted.indexOf(no) >= 0) return { ok: false, err: 'muted' };
           const v = [1, 2, 3].map(i => Number(p['s' + i]));
           if (v.some(x => !(x >= 1 && x <= 5))) return { ok: false, err: 'badscore' };
           db.votes.push({ dev: p.dev, no, round: db.round, scores: v });
@@ -120,15 +129,34 @@ function makeServer() {
             db.votes = db.votes.filter(v => (v.round || 1) !== db.round);
             db.set.published = false;
           }
+          let removed = null;
+          if (c === 'muteOne' || c === 'unmuteOne') {
+            const mno = Number(p.no);
+            if (!db.signups.some(s => s.no === mno)) return { ok: false, err: 'badno' };
+            db.muted = c === 'muteOne'
+              ? (db.muted.indexOf(mno) >= 0 ? db.muted : db.muted.concat([mno]))
+              : db.muted.filter(n => n !== mno);
+          }
+          if (c === 'removeOne') {
+            const dno = Number(p.no);
+            const hit = db.signups.find(s => s.no === dno);
+            if (!hit) return { ok: false, err: 'badno' };
+            removed = { no: dno, name: hit.name };
+            db.signups = db.signups.filter(s => s.no !== dno);
+            db.finalists = db.finalists.filter(n => n !== dno);
+            db.muted = db.muted.filter(n => n !== dno);
+          }
           if (c === 'reset') {
-            db.signups = []; db.votes = []; db.round = 1; db.finalists = [];
+            db.signups = []; db.votes = []; db.round = 1; db.finalists = []; db.muted = [];
             db.set = { signupOpen: true, voteOpen: false, published: false };
           }
           const r = rank();
           const out = { ok: true,
-            settings: { ...db.set, round: db.round, finalists: db.finalists.slice() },
-            signups: visible().map(s => ({ no: s.no, name: s.name, songs: s.songs })),
+            settings: { ...db.set, round: db.round,
+                        finalists: db.finalists.slice(), muted: db.muted.slice() },
+            signups: listOut(),
             published: db.set.published, voters: r.voters, rank: r.rank, round: db.round };
+          if (removed) out.removed = removed;
           if (db.round > 1) out.prelim = rank(1).rank;
           return out;
         }
@@ -728,6 +756,176 @@ function makeServer() {
     await page.click('#reset'); await page.waitForTimeout(400);
     eq(asked, 2, '清空要確認兩次');
     eq(calls.filter(c => c.cmd === 'reset').length, 0, '第二次不同意就不清');
+    await ctx.close();
+  }
+
+  /* ══════════ 19. 單獨開關某一位的評分 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.set.voteOpen = true;
+    ['甲', '乙', '丙'].forEach((n, i) =>
+      server.db.signups.push({ no: i + 1, dev: 'x' + i, name: n, songs: ['a - b', 'c - d'] }));
+
+    const { ctx, page } = await phone(server, calls, HOST + '/vote-admin.html');
+    await page.fill('#pw', 'testpw'); await page.click('#enter'); await page.waitForTimeout(500);
+
+    eq((await page.$$('#list tbody tr')).length, 3, '名單三列');
+    eq((await page.$$('#list button[data-cmd="muteOne"]')).length, 3, '每一列都有暫停按鈕');
+    eq((await page.$$('#list button[data-cmd="removeOne"]')).length, 3, '每一列都有刪除按鈕');
+
+    // ── 暫停第二位 ──
+    await page.click('#list tbody tr:nth-child(2) button[data-cmd="muteOne"]');
+    await page.waitForTimeout(500);
+    const sent = calls.filter(c => c.cmd === 'muteOne');
+    eq(sent.length, 1, '送出 muteOne');
+    eq(sent[0].no, '2', '帶上是哪一位的編號');
+    check('暫停的那一列標成 muted',
+      await page.$eval('#list tbody tr:nth-child(2)', e => e.classList.contains('muted')));
+    check('那一列出現「暫停中」',
+      (await page.textContent('#list tbody tr:nth-child(2)')).includes('暫停中'));
+    check('按鈕換成「開放」',
+      !!(await page.$('#list tbody tr:nth-child(2) button[data-cmd="unmuteOne"]')));
+    check('其他列不受影響',
+      !(await page.$eval('#list tbody tr:nth-child(1)', e => e.classList.contains('muted'))));
+    check('畫面說了做了什麼', (await msg(page)).includes('已暫停'));
+
+    // ── 同仁端：留在名單上但按不下去 ──
+    {
+      const { ctx: c2, page: p2 } = await phone(server, calls, HOST + '/vote.html#vote');
+      await p2.waitForTimeout(500);
+      eq((await p2.$$('.people .person')).length, 3,
+         '⚠ 暫停不等於消失——已經評過他的人才不會以為分數不見了');
+      const second = '.people .person:nth-child(2)';
+      check('被暫停的那位標成 off', await p2.$eval(second, e => e.classList.contains('off')));
+      check('而且按不下去', await p2.$eval(second, e => e.disabled));
+      check('寫著「暫停評分」', (await p2.textContent(second)).includes('暫停評分'));
+      check('其他人照樣按得下去', !(await p2.$eval('.people .person:nth-child(1)', e => e.disabled)));
+
+      // 按下去不會開評分表單
+      await p2.$eval(second, e => e.click());
+      await p2.waitForTimeout(200);
+      check('按了也不會打開評分表單', await p2.$eval('#voteForm', e => e.hidden));
+
+      // 就算硬送，後端也擋
+      const r = await p2.evaluate(() => new Promise(res => {
+        window.call({ action: 'vote', dev: 'hack', no: 2, s1: 5, s2: 5, s3: 5 }, res, e => res({ err: e }));
+      })).catch(() => null);
+      eq(r && r.err, 'muted', '硬送的票後端擋下來（不是只有前端隱藏）');
+      await c2.close();
+    }
+
+    // ── 開回來 ──
+    await page.click('#list tbody tr:nth-child(2) button[data-cmd="unmuteOne"]');
+    await page.waitForTimeout(500);
+    eq(calls.filter(c => c.cmd === 'unmuteOne').length, 1, '送出 unmuteOne');
+    check('標記拿掉',
+      !(await page.$eval('#list tbody tr:nth-child(2)', e => e.classList.contains('muted'))));
+    check('按鈕換回「暫停」',
+      !!(await page.$('#list tbody tr:nth-child(2) button[data-cmd="muteOne"]')));
+
+    {
+      const { ctx: c3, page: p3 } = await phone(server, calls, HOST + '/vote.html#vote');
+      await p3.waitForTimeout(500);
+      check('同仁端也按得回來了',
+        !(await p3.$eval('.people .person:nth-child(2)', e => e.disabled)));
+      await c3.close();
+    }
+
+    await ctx.close();
+  }
+
+  /* ══════════ 20. 單獨刪除某一位 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    server.db.set.voteOpen = true;
+    ['甲', '乙', '丙'].forEach((n, i) =>
+      server.db.signups.push({ no: i + 1, dev: 'x' + i, name: n, songs: ['a - b', 'c - d'] }));
+    server.db.votes.push({ dev: 'p1', no: 2, round: 1, scores: [5, 5, 5] });
+
+    const { ctx, page } = await phone(server, calls, HOST + '/vote-admin.html');
+    await page.fill('#pw', 'testpw'); await page.click('#enter'); await page.waitForTimeout(500);
+
+    // ── 問過才刪 ──
+    let asked = 0, seen = '';
+    page.on('dialog', d => { asked++; seen = d.message(); asked === 1 ? d.dismiss() : d.accept(); });
+    await page.click('#list tbody tr:nth-child(2) button[data-cmd="removeOne"]');
+    await page.waitForTimeout(400);
+    eq(asked, 1, '刪除前會問一次');
+    check('問話裡講得出是誰', seen.includes('2 號') && seen.includes('乙'));
+    check('也講明沒有復原', seen.includes('沒有復原'));
+    eq(calls.filter(c => c.cmd === 'removeOne').length, 0, '不同意就不刪');
+    eq((await page.$$('#list tbody tr')).length, 3, '名單沒動');
+
+    // ── 真的刪 ──
+    await page.click('#list tbody tr:nth-child(2) button[data-cmd="removeOne"]');
+    await page.waitForTimeout(500);
+    const del = calls.filter(c => c.cmd === 'removeOne');
+    eq(del.length, 1, '送出 removeOne');
+    eq(del[0].no, '2', '帶上是哪一位的編號');
+    eq((await page.$$('#list tbody tr')).length, 2, '名單少一位');
+    eq(await page.textContent('#cnt'), '共 2 位', '人數跟著改');
+    check('名單上找不到他了', !(await page.textContent('#list')).includes('乙'));
+    check('畫面講得出刪掉的是誰', (await msg(page)).includes('乙'));
+    check('他的分數不再列入名次', !(await page.textContent('#rank')).includes('乙'));
+
+    // ── 同仁端也看不到，而且編號不回收 ──
+    {
+      const { ctx: c2, page: p2 } = await phone(server, calls, HOST + '/vote.html#vote');
+      await p2.waitForTimeout(500);
+      eq((await p2.$$('.people .person')).length, 2, '同仁端只剩兩位');
+      await tab(p2, '報名');
+      await fillSignup(p2, '丁', [['歌一', '甲'], ['歌二', '乙']]);
+      eq(await p2.textContent('#myNo'), '4',
+         '⚠ 新報名拿 4 號不是 3 號——編號回收的話兩個人會共用編號，票就混在一起');
+      await c2.close();
+    }
+
+    await ctx.close();
+  }
+
+  /* ══════════ 21. 列上的按鈕在等後端時不能被輪詢洗掉 ══════════ */
+  {
+    // 控制台每 5 秒自動更新一次。名單那張表要是照常重畫，
+    // 按下去的那顆按鈕會連同「暫停中」一起被換掉，主持人就會再按一次。
+    const server = makeServer(), calls = [];
+    ['甲', '乙'].forEach((n, i) =>
+      server.db.signups.push({ no: i + 1, dev: 'x' + i, name: n, songs: ['a - b', 'c - d'] }));
+    const ctx = await browser.newContext({ timezoneId: 'Asia/Taipei' });
+    const page = await ctx.newPage();
+    await page.route('**/script.google.com/**', route => {
+      const p = Object.fromEntries(new URL(route.request().url()).searchParams);
+      calls.push(p);
+      const res = server.handle(p);
+      const body = `${p.callback}(${JSON.stringify(res)});`;
+      const delay = p.cmd === 'muteOne' ? 7000 : 0;      // 拖過一次輪詢
+      setTimeout(() => route.fulfill({
+        status: 200, contentType: 'application/javascript; charset=utf-8', body
+      }), delay);
+    });
+    await page.addInitScript(api => { window.VOTE_API = api; }, API);
+    await page.goto(HOST + '/vote-admin.html');
+    await page.fill('#pw', 'testpw'); await page.click('#enter'); await page.waitForTimeout(500);
+
+    await page.click('#list tbody tr:nth-child(1) button[data-cmd="muteOne"]');
+    await page.waitForTimeout(400);
+    // 讀成一個普通物件，按鈕被重畫掉時回 null——這樣壞掉是報一條 ✗，不是整份測試炸掉
+    const btnState = () => page.evaluate(() => {
+      var e = document.querySelector('#list tbody tr:nth-child(1) button[data-cmd="muteOne"]');
+      return e ? { text: e.textContent, off: e.disabled } : null;
+    });
+    const s1 = await btnState();
+    eq(s1 && s1.text, '暫停中', '按下去顯示暫停中');
+    check('等待中不能重複按', !!(s1 && s1.off));
+
+    await page.waitForTimeout(5400);            // 這期間至少輪詢過一次
+    const s2 = await btnState();
+    check('輪詢過後按鈕還在等待狀態（沒被重畫洗掉）',
+      !!(s2 && s2.off && s2.text === '暫停中'));
+    eq(calls.filter(c => c.cmd === 'muteOne').length, 1, '只送出一次');
+
+    await page.waitForTimeout(2200);
+    check('回來之後那一列變成暫停中',
+      await page.$eval('#list tbody tr:nth-child(1)', e => e.classList.contains('muted')));
     await ctx.close();
   }
 
