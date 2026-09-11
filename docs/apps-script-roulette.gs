@@ -26,6 +26,11 @@ var CAP_FLOOR   = 6;    // 起始名額下限，見 spec §4.1b（開頭幾位�
 var MAX_PEOPLE  = 56;   // 含兩位隊長
 var MIN_CLOSE   = 12;   // 報到不到這個數就封盤，起始下限可能弄歪終值 → 要主持人確認
 
+// 鎖要等多久。⚠️ 2026-09-11 壓測：54 支手機同時送，30 秒等不到的一律回 BUSY，
+// 結果 163 個請求全是 HTTP 200、只有 26 筆真的進去。鎖裡面每少一次試算表往返，
+// 就少握鎖約 0.3–0.5 秒；54 個人排隊就是差 20–30 秒。兩件事要一起做：把鎖握短、把等待拉長。
+var LOCK_WAIT_MS = 120000;
+
 var RNG = null;                                  // 回測可覆寫，正式執行一律 null
 function setRng(f) { RNG = f; }
 function rnd() { return RNG ? RNG() : Math.random(); }
@@ -82,7 +87,7 @@ function nowIso() {
 
 function withLock(fn) {
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) return err('BUSY', '系統忙碌，請再按一次');
+  if (!lock.tryLock(LOCK_WAIT_MS)) return err('BUSY', '系統忙碌，請再按一次');
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
@@ -101,7 +106,8 @@ function setup() {
   return p.getProperty('SS_ID');
 }
 
-function ss() { return SpreadsheetApp.openById(props().getProperty('SS_ID')); }
+var _ss = null, _shR = null, _shE = null;   // 同一次執行內快取，少掉重複的 API 往返
+function ss() { if (!_ss) _ss = SpreadsheetApp.openById(props().getProperty('SS_ID')); return _ss; }
 
 function ensure(name, headers) {
   var book = ss();
@@ -110,8 +116,8 @@ function ensure(name, headers) {
   if (sh.getLastRow() === 0) { sh.appendRow(headers); sh.setFrozenRows(1); }
   return sh;
 }
-function sheetR() { return ensure(SHEET_R, HEAD_R); }
-function sheetE() { return ensure(SHEET_E, HEAD_E); }
+function sheetR() { if (!_shR) _shR = ensure(SHEET_R, HEAD_R); return _shR; }
+function sheetE() { if (!_shE) _shE = ensure(SHEET_E, HEAD_E); return _shE; }
 
 function logEvent(name, action, result, dev) {
   try { sheetE().appendRow([nowIso(), name, action, result, dev || '']); } catch (e) {}
@@ -145,9 +151,7 @@ function writeRow(r) {
 }
 
 function appendPerson(name, dev, team, status, spins, src) {
-  var sh = sheetR();
-  sh.appendRow([nowIso(), name, dev || '', team || '', status, spins, nowIso(), src || 'SELF']);
-  return sh.getLastRow();
+  sheetR().appendRow([nowIso(), name, dev || '', team || '', status, spins, nowIso(), src || 'SELF']);
 }
 
 function findByName(rows, name) {
@@ -200,6 +204,8 @@ function meOf(rows, p) {
   return { name: r.name, team: r.team, status: r.status, spins: r.spins };
 }
 
+/** ⚠️ 寫完之後一律用手上這份 rows 算回應，不要再 readRoster() 一次——
+ *  那是鎖裡面最貴的一次試算表往返，54 個人排隊時會直接把鎖等爆。 */
 function snapshot(rows, p, extra) {
   var cnt = counts(rows);
   var data = { me: meOf(rows, p), count: cnt, cap: caps(cnt.checkedIn, cnt.red, cnt.white) };
@@ -218,8 +224,10 @@ function apiCheckin(p) {
     if (findByName(rows, name)) return snapshot(rows, { name: name, dev: p.dev });
     if (rows.length >= MAX_PEOPLE) return err('ROSTER_FULL', '人數已經滿了（上限 ' + MAX_PEOPLE + ' 人）');
     appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
+    rows.push({ row: rows.length + 2, name: name, dev: String(p.dev || ''),
+                team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF' });
     logEvent(name, 'CHECKIN', '', p.dev);
-    return snapshot(readRoster(), { name: name, dev: p.dev });
+    return snapshot(rows, { name: name, dev: p.dev });
   });
 }
 
@@ -247,8 +255,9 @@ function apiSpin(p) {
       if (rows.length >= MAX_PEOPLE) return err('ROSTER_FULL', '人數已經滿了（上限 ' + MAX_PEOPLE + ' 人）');
       appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
       logEvent(name, 'CHECKIN', '', p.dev);
-      rows = readRoster();
-      me = findByName(rows, name);
+      me = { row: rows.length + 2, name: name, dev: String(p.dev || ''),
+             team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF' };
+      rows.push(me);
     }
     if (me.status === 'LOCKED') return err('ALREADY_LOCKED', '你已經抽完了');
 
@@ -265,7 +274,7 @@ function apiSpin(p) {
     writeRow(me);
     logEvent(name, 'SPIN', got.team + (second ? '/LOCKED' : '/PENDING'), p.dev);
 
-    return snapshot(readRoster(), { name: name, dev: p.dev }, { forced: got.forced });
+    return snapshot(rows, { name: name, dev: p.dev }, { forced: got.forced });
   });
 }
 
@@ -281,7 +290,7 @@ function apiConfirm(p) {
     me.status = 'LOCKED';
     writeRow(me);
     logEvent(name, 'CONFIRM', me.team, p.dev);
-    return snapshot(readRoster(), { name: name, dev: p.dev });
+    return snapshot(rows, { name: name, dev: p.dev });
   });
 }
 

@@ -478,7 +478,7 @@ function call(params) {
     var cb = 'rcb' + (++seq) + '_' + Date.now().toString(36);
     var s = document.createElement('script');
     var done = false;
-    var timer = setTimeout(function () { finish({ ok: false, error: 'TIMEOUT', message: '等太久了，可能已經送出去了。先按「重新整理戰況」看看。' }); }, 60000);
+    var timer = setTimeout(function () { finish({ ok: false, error: 'TIMEOUT', message: '網路不太穩，正在幫你確認剛剛那次有沒有送出去⋯' }); }, 60000);
     function finish(r) {
       if (done) return; done = true;
       clearTimeout(timer);
@@ -666,12 +666,18 @@ $('spinBtn').onclick = async function () {
   if (!n) { say('bad', '請先輸入你的名字再抽。'); return; }
   myName = n; ls(NAME_KEY, n);
   this.disabled = true; busy(true, '抽');
-  say('', '連線中⋯ 結果由伺服器決定，轉盤只是演出。');
   var r = await call({ action: 'spin', name: n, dev: dev });
   busy(false);
   if (!r.ok) {
     if (r.error === 'ALREADY_LOCKED') { await refresh(true); return; }
-    this.disabled = false; say('bad', r.message || '抽籤失敗，再試一次。'); return;
+    // ⚠️ 送出後沒收到回應時，資料可能其實已經寫進去了（實測會有少數回應被 Google 截斷）。
+    //    先去問一次自己的狀態——不然他再按一次「轉」，會把第一次的結果當成重抽直接用掉。
+    var st = await refresh(true);
+    if (st && st.ok && ST.me.status === 'PENDING') { showPending(ST.me.team, false, true); return; }
+    if (st && st.ok && ST.me.status === 'LOCKED') return;
+    this.disabled = false;
+    say('bad', r.message || '抽籤失敗，再試一次。');
+    return;
   }
   var team = r.data.me.team, second = r.data.me.spins >= 2, forced = r.data.forced;
   await spinTo(team);
@@ -681,24 +687,28 @@ $('spinBtn').onclick = async function () {
       note: '這是你的第二次，結果已經鎖定，不能再改了。',
       buttons: [{ text: '知道了', cls: 'btn-c', on: function () { closeDialog(); refresh(true); } }] });
   } else {
-    dialog({ team: team, title: '第一次抽籤 · 尚未定案', noteKind: 'warn',
-      note: (forced
-        ? '⚠️ 另一隊名額已經滿了，這一席是<b>補位</b>——就算重抽也還是這一隊。<br>'
-        : '') + '你可以<b>留著這個結果</b>，也可以<b>再抽一次</b>。<br>再抽一次就<b>直接定案，不能反悔</b>。',
-      buttons: [
-        { text: '確認參戰', cls: 'btn-c', on: async function () {
-            closeDialog(); busy(true, '確認');
-            var c = await call({ action: 'confirm', name: myName, dev: dev });
-            busy(false);
-            if (!c.ok) { say('bad', c.message || '確認失敗，再按一次。'); return; }
-            apply(c); refresh(true);
-          } },
-        // 補位時重抽翻不了盤（除非期間又有人報到），所以降成次要按鈕，不要做成主要動作
-        { text: '再次抽籤', cls: forced ? 'btn-g' : 'btn-r',
-          on: function () { closeDialog(); $('spinBtn').disabled = false; $('spinBtn').click(); } }
-      ] });
+    showPending(team, forced);
   }
 };
+
+function showPending(team, forced, recovered) {
+  dialog({ team: team, title: '第一次抽籤 · 尚未定案', noteKind: 'warn',
+    note: (recovered ? '（剛剛網路不穩，這是你已經抽到的結果）<br>' : '')
+      + (forced ? '⚠️ 另一隊名額已經滿了，這一席是<b>補位</b>——就算重抽也還是這一隊。<br>' : '')
+      + '你可以<b>留著這個結果</b>，也可以<b>再抽一次</b>。<br>再抽一次就<b>直接定案，不能反悔</b>。',
+    buttons: [
+      { text: '確認參戰', cls: 'btn-c', on: async function () {
+          closeDialog(); busy(true, '確認');
+          var c = await call({ action: 'confirm', name: myName, dev: dev });
+          busy(false);
+          if (!c.ok) { say('bad', c.message || '確認失敗，再按一次。'); return; }
+          apply(c); refresh(true);
+        } },
+      // 補位時重抽翻不了盤（除非期間又有人報到），所以降成次要按鈕，不要做成主要動作
+      { text: '再次抽籤', cls: forced ? 'btn-g' : 'btn-r',
+        on: function () { closeDialog(); $('spinBtn').disabled = false; $('spinBtn').click(); } }
+    ] });
+}
 
 /* ── 名冊與雷達 ── */
 function drawRadar(red, white) {

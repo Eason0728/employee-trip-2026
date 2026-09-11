@@ -31,6 +31,7 @@ const CAP_FLOOR = 6, MAX_PEOPLE = 56, PW = 'testpw';
 function newState() { return { phase: 'CHECKIN', rows: [] }; }
 let S = newState();
 const hits = [];                                   // 記錄每一次請求，用來驗「同仁端不輪詢」
+let truncateNextSpin = false;                      // 模擬「資料寫進去了、但回應沒回到手機」
 
 function counts(rows) {
   let red = 0, white = 0, unspun = 0;
@@ -98,6 +99,7 @@ function backend(p) {
     if (second) r.team = null;
     const c = counts(S.rows), g = pick(caps(c.checkedIn, c.red, c.white), c);
     r.team = g.team; r.status = second ? 'LOCKED' : 'PENDING'; r.spins = second ? 2 : 1;
+    if (truncateNextSpin) { truncateNextSpin = false; return '__TRUNCATED__'; }
     return snap(p, { forced: g.forced });
   }
   if (p.action === 'confirm') {
@@ -158,7 +160,12 @@ function backend(p) {
     await page.route('**/script.google.com/**', route => {
       const u = new URL(route.request().url());
       const p = {}; u.searchParams.forEach((v, k) => { p[k] = v; });
-      const body = p.callback + '(' + JSON.stringify(backend(p)) + ');';
+      const out = backend(p);
+      if (out === '__TRUNCATED__') {           // 回應被截斷：瀏覽器那支 <script> 會 onerror
+        route.fulfill({ status: 500, contentType: 'text/plain', body: 'truncated' });
+        return;
+      }
+      const body = p.callback + '(' + JSON.stringify(out) + ');';
       route.fulfill({ status: 200, contentType: 'application/javascript', body });
     });
     await page.addInitScript(a => { window.ROULETTE_API = a; }, API);
@@ -257,6 +264,26 @@ function backend(p) {
   const lb = S.rows.find(r => r.name === '測試乙');
   eq(lb.status, 'LOCKED', '第二次抽完直接鎖死');
   eq(lb.spins, 2, '抽籤次數是 2');
+
+  /* ── 6b. 回應被截斷時的復原 ── */
+  section('6b. 抽籤回應掉了，但資料其實進去了');
+  {
+    const { ctx: c2, page: p2 } = await openPage('roulette.html');
+    await p2.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 8000 });
+    await p2.fill('#nameInput', '斷線丙');
+    truncateNextSpin = true;
+    await p2.click('#spinBtn');
+    // 應該自己去問一次狀態，然後把「已經抽到的結果」顯示出來，而不是讓他再按一次轉
+    await p2.waitForSelector('#mask:not([hidden])', { timeout: 25000 });
+    ok((await p2.$eval('#dlgNote', e => e.textContent)).includes('網路不穩'),
+       '網路不穩時顯示「這是你已經抽到的結果」');
+    const rec = S.rows.find(r => r.name === '斷線丙');
+    eq(rec.spins, 1, '沒有把第一次的結果當成重抽用掉');
+    eq(rec.status, 'PENDING', '狀態還是暫定，兩次機會沒被吃掉');
+    const b = await p2.$$eval('#dlgActs .btn', es => es.map(e => e.textContent));
+    eq(JSON.stringify(b), '["確認參戰","再次抽籤"]', '兩顆按鈕都還在');
+    await c2.close();
+  }
 
   /* ── 7. 名冊與雷達 ── */
   section('7. 陣營戰報');
