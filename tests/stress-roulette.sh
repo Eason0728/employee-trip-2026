@@ -28,7 +28,13 @@ api() {   # api <輸出檔> <key=value>...
 echo "▶ 清空並設定隊長（會刪掉現有資料，確定沒有正式資料再跑）"
 api "$TMP/clear.txt" "action=admin" "pw=$PW" "cmd=clearAll"
 api "$TMP/lead.txt"  "action=admin" "pw=$PW" "cmd=setLeaders" "red=壓測紅" "white=壓測白"
-tail -1 "$TMP/lead.txt" | grep -q '^200$' || { echo "✗ 設隊長失敗："; cat "$TMP/lead.txt"; exit 1; }
+# ⚠️ 一定要看 ok，不能只看 HTTP 200。2026-09-11 通行碼被改過，這兩步默默回 BAD_PW（仍是 200），
+#    腳本照樣往下跑，54 個壓測假人直接疊到正式資料上，事後要一筆一筆刪。
+for f in clear lead; do
+  grep -q '"ok":true' "$TMP/$f.txt" || {
+    echo "✗ 前置步驟 $f 失敗，停手（通行碼對嗎？）："; sed '$d' "$TMP/$f.txt" | head -c 200; echo; exit 1; }
+done
+echo "   ✓ 已清空並設好壓測隊長"
 
 echo "▶ $PEOPLE 支手機報到（間隔 ${STAGGER}s）"
 for i in $(seq 1 "$PEOPLE"); do
