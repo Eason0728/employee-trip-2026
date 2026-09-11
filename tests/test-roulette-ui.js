@@ -421,10 +421,12 @@ function backend(p) {
   const cli = fs.readFileSync(path.join(root, 'roulette.html'), 'utf8');
   // 貼到 LINE 的分享卡片。沒有這些標籤，LINE 會自己抓頁面文字，
   // 抓到的是「SEC-A 50% TURF TELEMETRY // 等待連線」那種看不懂的東西。
-  ['og:title', 'og:description', 'og:image', 'og:url', 'twitter:card'].forEach(k => {
+  ['og:title', 'og:description', 'og:image', 'twitter:card'].forEach(k => {
     ok(cli.indexOf('"' + k + '"') > -1, 'roulette.html 有 ' + k);
   });
   ok(/og:image" content="https:\/\//.test(cli), '分享圖用絕對網址（LINE 不吃相對路徑）');
+  // 不放 og:url：有些平台拿它當快取的鍵，放了就沒辦法用 ?v=2 躲開舊預覽
+  ok(cli.indexOf('"og:url"') < 0, '沒有 og:url，才能用網址加參數換掉舊的預覽快取');
   ok(fs.existsSync(path.join(root, 'roulette-share.png')), '分享圖檔案存在');
   const adm = fs.readFileSync(path.join(root, 'roulette-admin.html'), 'utf8');
   ok(adm.indexOf('noindex') > -1, '控制台不給搜尋引擎收錄');
