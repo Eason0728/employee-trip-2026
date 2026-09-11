@@ -1002,6 +1002,48 @@ function makeServer() {
     await c2.close(); await ctx.close();
   }
 
+  /* ══════════ 24. 評分開始之後才刪人，警語要講重一點 ══════════ */
+  {
+    // 照流程名單在開放評分之前就定了。真的評到一半還要刪，那是例外——
+    // 問話要講出他已經收到幾票，不然主持人按下去才發現分數沒了。
+    const server = makeServer(), calls = [];
+    server.db.set.voteOpen = true;
+    ['甲', '乙'].forEach((n, i) =>
+      server.db.signups.push({ no: i + 1, dev: 'x' + i, name: n, songs: ['a - b', 'c - d'] }));
+
+    const { ctx, page } = await phone(server, calls, HOST + '/vote-admin.html');
+    await page.fill('#pw', 'testpw'); await page.click('#enter'); await page.waitForTimeout(500);
+
+    let seen = '';
+    page.on('dialog', d => { seen = d.message(); d.dismiss(); });
+
+    // 還沒有人評分：不要無中生有嚇人
+    await page.click('#list tbody tr:nth-child(2) button[data-cmd="removeOne"]');
+    await page.waitForTimeout(300);
+    check('沒人評分時不提票數', !seen.includes('評分已經開始'));
+    check('但還是有講序號會往前挪', seen.includes('往前遞補'));
+
+    // 兩支手機評了 2 號
+    server.db.votes.push({ dev: 'p1', no: 2, round: 1, scores: [5, 5, 5] });
+    server.db.votes.push({ dev: 'p2', no: 2, round: 1, scores: [4, 4, 4] });
+    await page.click('#refresh'); await page.waitForTimeout(600);
+
+    seen = '';
+    await page.click('#list tbody tr:nth-child(2) button[data-cmd="removeOne"]');
+    await page.waitForTimeout(300);
+    check('有人評過就講「評分已經開始」', seen.includes('評分已經開始'));
+    check('而且講得出是幾票', seen.includes('2 票'));
+    eq(calls.filter(c => c.cmd === 'removeOne').length, 0, '兩次都按取消，一個都沒刪');
+
+    // 沒被評過的那一位不要跟著警告
+    seen = '';
+    await page.click('#list tbody tr:nth-child(1) button[data-cmd="removeOne"]');
+    await page.waitForTimeout(300);
+    check('沒被評過的那位不跟著警告', !seen.includes('評分已經開始'));
+
+    await ctx.close();
+  }
+
   await browser.close();
   console.log(`\n前端回測：${passes} passed, ${failures} failed`);
   process.exit(failures ? 1 : 0);
