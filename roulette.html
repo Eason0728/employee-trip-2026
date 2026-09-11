@@ -4,6 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>分隊轉盤 · 2026 員旅</title>
+<meta name="description" content="9/15 獵鷹漆彈分隊。輸入你的名字，轉一次就知道自己是哪一隊。每人兩次機會，第二次直接定案。">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="鼎兆元 × 2026 員工旅遊">
+<meta property="og:title" content="分隊轉盤 · 9/15 獵鷹漆彈">
+<meta property="og:description" content="輸入你的名字，轉一次就知道自己是哪一隊。每人兩次機會，第二次直接定案。">
+<meta property="og:url" content="https://eason0728.github.io/employee-trip-2026/roulette.html">
+<meta property="og:image" content="https://eason0728.github.io/employee-trip-2026/roulette-share.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="分隊轉盤：豪火戰隊對榆你相遇">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0b0f19">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Anybody:wght@600;800;900&family=Outfit:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -116,7 +128,7 @@ header{position:sticky;top:0;z-index:20;padding-top:env(safe-area-inset-top,0px)
   background:conic-gradient(var(--white-team) 0deg 180deg, var(--red) 180deg 360deg);
   box-shadow:0 0 0 6px var(--surface-low),0 0 0 7px var(--outline),0 0 44px rgba(255,59,82,.28)}
 .wheel .seg{position:absolute;top:50%;font-family:var(--f-display);font-weight:900;
-  font-size:clamp(1rem,4.8vw,1.4rem);letter-spacing:.12em;
+  font-size:clamp(1rem,4.8vw,1.4rem);letter-spacing:.12em;white-space:nowrap;
   writing-mode:vertical-rl;text-orientation:upright;transform:translateY(-50%)}
 .wheel .seg.r{left:11%;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)}
 .wheel .seg.w{right:11%;color:#12203a}
@@ -435,6 +447,8 @@ var CONFIG = {
   spinSeconds:   4,      // 轉盤要轉幾秒（也要同步改 CSS 的 .needle transition）
   adminHref:     'roulette-admin.html'               // 左上角標題連到哪（主持人入口）
 };
+/* ⚠️ 貼到 LINE 的那張分享卡片不吃這裡的設定——它讀的是 <head> 裡的 og: 標籤。
+   改隊名不影響卡片（卡片文案沒提隊名）；要換卡片的圖就重出 roulette-share.png。 */
 /* ═══════════════════ 以下不用改 ═══════════════════ */
 var DEV_KEY = 'tripRoulette2026Dev', NAME_KEY = 'tripRoulette2026Name';
 
