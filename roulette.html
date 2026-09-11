@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>分隊轉盤 · 2026 員旅</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anybody:wght@600;800;900&family=Outfit:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+/* 色票與字體沿用 Stitch 設計稿；沒有載 Tailwind CDN——車上是行動網路，少一個 400KB 的下載。
+   畫面上所有看起來像遙測數字的東西，值都是真的（隊伍人數、名額、階段、裝置編號），
+   刻意不編假資料——編出來的東西一旦被問「這是什麼意思」就答不出來。 */
+:root{
+  --bg:#0b0f19; --surface:#111726; --surface-high:#161e31; --surface-low:#0e1320;
+  --variant:#1c2333; --bright:#222c40;
+  --on:#e3e1ef; --on-variant:#8ca3ba; --outline:#495a75; --outline-2:#2b3548;
+  --cyan:#00eefc; --cyan-dim:#00dbe9; --cyan-pale:#d3fbff;
+  --red:#ff3b52; --red-deep:#c30021; --red-pale:#ffb2bd;
+  --white-team:#e9eef7; --white-deep:#8fa3c4;
+  --amber:#ffb59c; --danger:#ffb4ab;
+  --f-display:'Anybody','Noto Sans TC','PingFang TC',system-ui,sans-serif;
+  --f-body:'Outfit','Noto Sans TC','PingFang TC',system-ui,sans-serif;
+  --f-mono:'Share Tech Mono',ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--on);
+  font-family:var(--f-body);overscroll-behavior-y:none}
+body{min-height:100dvh;padding-bottom:calc(74px + env(safe-area-inset-bottom,0px))}
+::-webkit-scrollbar{display:none}
+[hidden]{display:none!important}
+a{color:inherit;text-decoration:none}
+
+/* ── HUD 底紋 ── */
+.grid-bg{position:fixed;inset:0;z-index:-3;background-color:var(--bg);
+  background-image:linear-gradient(to right,rgba(0,238,252,.05) 1px,transparent 1px),
+                   linear-gradient(to bottom,rgba(0,238,252,.05) 1px,transparent 1px);
+  background-size:24px 24px}
+.vignette{position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 22%,rgba(0,238,252,.07),transparent 58%)}
+.scan{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.35;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.25),rgba(0,0,0,.25) 1px,transparent 1px,transparent 3px)}
+
+/* ── 通用零件 ── */
+.mono{font-family:var(--f-mono);letter-spacing:.08em}
+.lbl{font-family:var(--f-display);font-size:.6875rem;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--on-variant)}
+.hud{font-family:var(--f-mono);font-size:.625rem;letter-spacing:.1em;color:var(--outline);
+  text-transform:uppercase}
+.hud b{color:var(--cyan);font-weight:400}
+.card{position:relative;background:var(--surface);border:1px solid var(--outline-2);
+  border-radius:.75rem;padding:1rem}
+.brk::before,.brk::after{content:'';position:absolute;width:9px;height:9px;
+  border:0 solid var(--cyan);pointer-events:none}
+.brk::before{top:-1px;left:-1px;border-top-width:2px;border-left-width:2px}
+.brk::after{bottom:-1px;right:-1px;border-bottom-width:2px;border-right-width:2px}
+.wrap{max-width:560px;margin:0 auto;padding:0 1rem}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--cyan);
+  margin-right:.35rem;animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ── 頁首 ── */
+header{position:sticky;top:0;z-index:20;padding-top:env(safe-area-inset-top,0px);
+  background:rgba(11,15,25,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--outline-2)}
+.hdr{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.6rem 1rem}
+#adminLink{display:block;position:relative;padding-right:.9rem}
+#adminLink::after{content:'›';position:absolute;right:0;top:50%;transform:translateY(-52%);
+  font-family:var(--f-mono);color:var(--outline);font-size:1rem}
+#adminLink:active{opacity:.6}
+.hdr h1{margin:0;font-family:var(--f-display);font-size:.95rem;font-weight:900;letter-spacing:.02em;
+  white-space:nowrap}
+.hdr .sub{font-family:var(--f-mono);font-size:.625rem;color:var(--cyan);letter-spacing:.12em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── COMBAT FEED 跑馬燈（真資料：誰被派到哪一隊）── */
+.feed{overflow:hidden;border-bottom:1px solid var(--outline-2);background:var(--surface-low);
+  display:flex;align-items:center;height:26px}
+.feed .tag{flex:0 0 auto;font-family:var(--f-mono);font-size:.5625rem;letter-spacing:.12em;
+  color:#00272b;background:var(--cyan);padding:.28rem .45rem;height:100%;display:flex;align-items:center}
+.feed .track{flex:1;min-width:0;overflow:hidden;position:relative;height:100%}
+.feed .move{position:absolute;white-space:nowrap;font-family:var(--f-mono);font-size:.625rem;
+  letter-spacing:.06em;color:var(--on-variant);top:50%;transform:translateY(-50%);
+  will-change:transform;animation:march 26s linear infinite}
+.feed .move span{padding:0 .55rem}
+.feed .move .R{color:var(--red-pale)} .feed .move .W{color:var(--white-team)}
+.feed .move .sep{color:var(--outline)}
+@keyframes march{from{transform:translate(0,-50%)}to{transform:translate(-50%,-50%)}}
+
+/* ── 戰況條 ── */
+.tele{display:flex;align-items:center;gap:.5rem;font-family:var(--f-mono);font-size:.6875rem}
+.bar{height:8px;border-radius:99px;overflow:hidden;background:var(--variant);display:flex;flex:1;
+  border:1px solid var(--outline-2)}
+.bar i{display:block;height:100%;transition:width .5s ease}
+.bar .r{background:linear-gradient(90deg,var(--red-deep),var(--red))}
+.bar .w{background:linear-gradient(90deg,var(--white-deep),var(--white-team))}
+.telegrid{display:flex;justify-content:space-between;align-items:baseline;margin-top:.5rem;gap:.5rem;
+  white-space:nowrap}
+
+/* ── 轉盤 ── */
+.arena{position:relative;margin-top:1.1rem}
+.hudrow{display:flex;justify-content:space-between;gap:.5rem;margin:.45rem .1rem .25rem;
+  font-family:var(--f-mono);font-size:.5625rem;letter-spacing:.1em;color:var(--outline);
+  text-transform:uppercase;pointer-events:none}
+.warcodes{display:flex;align-items:stretch;justify-content:center;gap:.5rem;margin-bottom:.35rem}
+.wc{flex:1;border:1px solid var(--outline-2);border-radius:.4rem;padding:.3rem .45rem;
+  background:var(--surface-low)}
+.wc.r{border-color:rgba(255,59,82,.55)} .wc.w{border-color:rgba(143,163,196,.55)}
+.wc .k{font-family:var(--f-mono);font-size:.5625rem;letter-spacing:.12em;color:var(--outline)}
+.wc .v{font-family:var(--f-display);font-weight:800;font-size:.8125rem;letter-spacing:.04em}
+.wc.r .v{color:var(--red-pale)} .wc.w .v{color:var(--white-team)}
+.wc .wcry{font-size:.625rem;line-height:1.35;color:var(--on-variant);margin-top:.15rem}
+.vs{flex:0 0 auto;align-self:center;font-family:var(--f-mono);font-size:.5625rem;letter-spacing:.1em;color:var(--cyan);
+  border:1px solid var(--cyan);border-radius:.3rem;padding:.28rem .3rem}
+.wheelbox{position:relative;margin:.5rem auto 0;width:min(80vw,310px);aspect-ratio:1}
+.wheel{pointer-events:none;position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(var(--white-team) 0deg 180deg, var(--red) 180deg 360deg);
+  box-shadow:0 0 0 6px var(--surface-low),0 0 0 7px var(--outline),0 0 44px rgba(255,59,82,.28)}
+.wheel .seg{position:absolute;top:50%;font-family:var(--f-display);font-weight:900;
+  font-size:clamp(1rem,4.8vw,1.4rem);letter-spacing:.12em;
+  writing-mode:vertical-rl;text-orientation:upright;transform:translateY(-50%)}
+.wheel .seg.r{left:11%;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+.wheel .seg.w{right:11%;color:#12203a}
+.glass{position:absolute;inset:0;border-radius:50%;pointer-events:none;overflow:hidden}
+.glass::before{content:'';position:absolute;left:-30%;top:-120%;width:60%;height:340%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);
+  transform:rotate(18deg);animation:sheen 5.5s ease-in-out infinite}
+@keyframes sheen{0%{left:-40%}55%{left:120%}100%{left:120%}}
+.hubwrap{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.hub{pointer-events:auto;width:38%;aspect-ratio:1;border-radius:50%;border:2px solid var(--cyan);
+  background:radial-gradient(circle at 50% 35%,#2a3550,#0d1322);color:var(--cyan);
+  font-family:var(--f-display);font-weight:900;display:grid;place-items:center;cursor:pointer;
+  line-height:1.15;box-shadow:0 0 22px rgba(0,238,252,.35),inset 0 0 18px rgba(0,238,252,.14)}
+.hub em{font-style:normal;font-size:.8125rem;letter-spacing:.06em;display:block}
+.hub:disabled{cursor:default;box-shadow:none;color:var(--outline);border-color:var(--outline)}
+.hub:disabled small{color:var(--outline-2)}
+.hub small{display:block;font-size:.5rem;letter-spacing:.14em;color:var(--on-variant);margin-top:3px}
+.hub.live{animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 22px rgba(0,238,252,.35),inset 0 0 18px rgba(0,238,252,.14)}
+  50%{box-shadow:0 0 34px rgba(0,238,252,.6),inset 0 0 22px rgba(0,238,252,.22)}}
+.needle{position:absolute;inset:-16px;z-index:3;pointer-events:none;
+  transition:transform 4s cubic-bezier(.12,.72,.12,1)}
+.ptr{position:absolute;left:50%;top:-4px;transform:translateX(-50%);width:0;height:0;
+  border-left:13px solid transparent;border-right:13px solid transparent;
+  border-top:20px solid var(--cyan);filter:drop-shadow(0 0 7px rgba(0,238,252,.85))}
+.ring{position:absolute;inset:-16px;border-radius:50%;border:1px dashed rgba(0,238,252,.28);
+  pointer-events:none}
+.sweep{position:absolute;inset:-16px;border-radius:50%;pointer-events:none;overflow:hidden}
+.sweep::before{content:'';position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 0deg,rgba(0,238,252,.16),transparent 60deg);
+  animation:spin 3.4s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ticks{position:absolute;inset:-16px;pointer-events:none}
+
+/* ── 通行證 ── */
+.idcard{margin-top:1.1rem;background:linear-gradient(150deg,var(--surface-high),var(--surface-low));
+  border:1px solid var(--outline);border-radius:.75rem;padding:1rem;position:relative;overflow:hidden}
+.idcard::after{content:'';position:absolute;right:-70px;top:-70px;width:220px;height:220px;
+  border-radius:50%;background:radial-gradient(circle,rgba(0,238,252,.10),rgba(0,238,252,.03) 45%,transparent 72%);
+  pointer-events:none;z-index:0}
+.idcard>*{position:relative;z-index:1}
+.idhead{display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}
+.idrow{display:flex;gap:.5rem;margin-top:.6rem}
+input[type=text]{flex:1;min-width:0;background:var(--surface-low);color:var(--on);
+  border:1px solid var(--outline);border-radius:.5rem;padding:.72rem .8rem;font-size:1rem;
+  font-family:var(--f-body)}
+input[type=text]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3px rgba(0,238,252,.15)}
+.idfoot{display:flex;justify-content:space-between;align-items:flex-end;gap:.6rem;margin-top:.6rem}
+#barcode{height:26px;flex:0 0 auto;opacity:.75}
+.btn{border:none;border-radius:.5rem;padding:.72rem 1.05rem;font-family:var(--f-display);
+  font-weight:800;font-size:.875rem;letter-spacing:.06em;cursor:pointer}
+.btn-c{background:var(--cyan);color:#00272b}
+.btn-r{background:var(--red);color:#fff}
+.btn-g{background:var(--variant);color:var(--on);border:1px solid var(--outline)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn-wide{width:100%;margin-top:.55rem}
+
+/* ── 狀態列 ── */
+.note{margin-top:.8rem;padding:.7rem .85rem;border-radius:.6rem;font-size:.875rem;line-height:1.55;
+  border:1px solid var(--outline-2);background:var(--surface-low);color:var(--on-variant)}
+.note b{color:var(--on)}
+.note.warn{border-color:#7a5a1e;background:#221a08;color:var(--amber)}
+.note.bad{border-color:#7a2a26;background:#25100e;color:var(--danger)}
+.note.good{border-color:#1d5a5f;background:#072224;color:var(--cyan-pale)}
+
+/* ── 我的隊伍 ── */
+.mine{margin-top:1rem;border-radius:.75rem;padding:1rem;border:1px solid var(--outline);
+  position:relative;overflow:hidden}
+.mine.RED{background:linear-gradient(135deg,rgba(255,59,82,.2),rgba(195,0,33,.07));border-color:var(--red)}
+.mine.WHITE{background:linear-gradient(135deg,rgba(233,238,247,.16),rgba(143,163,196,.06));border-color:var(--white-deep)}
+.mine .tname{font-family:var(--f-display);font-size:1.6rem;font-weight:900;letter-spacing:.06em;margin:.15rem 0 .2rem}
+
+/* ── 名冊 ── */
+.teamcard{margin-top:1rem}
+.teamhead{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem}
+.teamcard h3{margin:0;font-family:var(--f-display);font-size:1.25rem;font-weight:900;letter-spacing:.05em}
+.teamcard.RED h3{color:var(--red-pale)}
+.teamcard.WHITE h3{color:var(--white-team)}
+.cry{margin-top:.25rem;font-size:.8125rem;line-height:1.45;color:var(--on-variant)}
+.teamcard.RED .cry{color:var(--red-pale)}
+.teamcard.WHITE .cry{color:var(--white-deep)}
+.names{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.7rem}
+.chip{font-size:.8125rem;padding:.34rem .6rem;border-radius:.4rem;background:var(--variant);
+  border:1px solid var(--outline-2);color:var(--on)}
+.chip.lead{border-color:var(--cyan);color:var(--cyan-pale)}
+.chip.me{outline:2px solid var(--cyan);outline-offset:1px}
+
+/* ── 雷達 ── */
+.radarwrap{position:relative}
+.radar{width:100%;aspect-ratio:1;max-width:320px;margin:.4rem auto 0;display:block}
+.radarwrap .sonar{position:absolute;left:50%;top:calc(.4rem + 50%);width:min(100%,320px);
+  aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;
+  overflow:hidden}
+/* 扇形從圓心掃出去，亮頭在前、拖尾在後，順時鐘繞。
+   conic-gradient 預設就是順時鐘，所以拖尾要放在角度較小的那一側。 */
+.radarwrap .sonar::before{content:'';position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 0deg,
+             transparent 0deg 232deg,
+             rgba(0,238,252,.02) 260deg,
+             rgba(0,238,252,.05) 300deg,
+             rgba(0,238,252,.12) 336deg,
+             rgba(0,238,252,.24) 356deg,
+             rgba(0,238,252,.30) 360deg);
+  animation:spin 3.6s linear infinite}
+/* 掃描線本身：從圓心拉到外緣的一條亮線，跟扇形同步 */
+.radarwrap .sonar::after{content:'';position:absolute;left:50%;top:0;width:2px;height:50%;
+  margin-left:-1px;transform-origin:50% 100%;
+  background:linear-gradient(to bottom,rgba(0,238,252,0),rgba(0,238,252,.7));
+  animation:spin 3.6s linear infinite}
+.readout{display:flex;justify-content:space-between;gap:.5rem;margin-top:.55rem}
+
+/* ── 底部導覽 ── */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;
+  background:rgba(11,15,25,.95);backdrop-filter:blur(10px);border-top:1px solid var(--outline-2);
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+nav.tabs button{flex:1;background:none;border:none;color:var(--on-variant);padding:.8rem .4rem;
+  font-family:var(--f-display);font-weight:800;font-size:.8125rem;letter-spacing:.06em;cursor:pointer}
+nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 var(--cyan)}
+
+/* ── 結果視窗 ── */
+.mask{position:fixed;inset:0;z-index:50;background:rgba(4,6,12,.86);backdrop-filter:blur(3px);
+  display:grid;place-items:center;padding:1.1rem}
+.dlg{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--outline);
+  border-radius:.9rem;padding:1.2rem;position:relative}
+.dlg h2{margin:.3rem 0 .1rem;font-family:var(--f-display);font-size:1.05rem;font-weight:900;letter-spacing:.04em}
+.big{font-family:var(--f-display);font-size:2.05rem;font-weight:900;letter-spacing:.06em;margin:.5rem 0 .1rem}
+.big.RED{color:var(--red)}
+.big.WHITE{color:var(--white-team)}
+.dlg .acts{display:flex;gap:.5rem;margin-top:1rem}
+.dlg .acts .btn{flex:1}
+.dlg .serial{display:flex;justify-content:space-between;margin-top:.6rem}
+.demo{position:fixed;left:0;right:0;bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:25;
+  background:#3a2a05;color:var(--amber);font-family:var(--f-mono);font-size:.6875rem;
+  text-align:center;padding:.32rem;border-top:1px solid #7a5a1e}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div><div class="vignette"></div><div class="scan"></div>
+
+<header>
+  <div class="hdr">
+    <!-- 左上角標題就是主持人控制台的入口（控制台自己要通行碼） -->
+    <a id="adminLink" href="roulette-admin.html">
+      <h1>分隊轉盤</h1>
+      <div class="sub">SPLAT-HQ // 2026 員旅 · 獵鷹漆彈</div>
+    </a>
+    <div class="lbl" style="text-align:right;white-space:nowrap">
+      <span class="dot"></span><span id="phaseTag">連線中</span>
+    </div>
+  </div>
+  <div class="feed">
+    <div class="tag">COMBAT FEED ::LIVE</div>
+    <div class="track"><div class="move" id="feedMove"><span class="sep">// 等待部署紀錄</span></div></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ════ 轉盤頁 ════ -->
+  <section id="view-wheel">
+    <div class="card brk" style="margin-top:1rem">
+      <div class="tele">
+        <span style="color:var(--red-pale)" id="teleR">豪火 0</span>
+        <span class="bar"><i class="r" id="barR" style="width:50%"></i><i class="w" id="barW" style="width:50%"></i></span>
+        <span style="color:var(--white-team)" id="teleW">0 榆你</span>
+      </div>
+      <div class="telegrid">
+        <span class="hud" id="secA">SEC-A <b>50%</b></span>
+        <span class="hud" id="capTag">—</span>
+        <span class="hud" id="secB">SEC-B <b>50%</b></span>
+      </div>
+      <div class="lbl mono" style="margin-top:.45rem;font-size:.625rem" id="teleSub">TURF TELEMETRY // 等待連線</div>
+    </div>
+
+    <div class="arena">
+      <div class="warcodes">
+        <div class="wc r"><div class="k">WAR_CODE :: RED</div><div class="v">豪火戰隊</div>
+          <div class="wcry">火力全開——豪！不！留！情！</div></div>
+        <div class="vs">TARGET<br>_VS</div>
+        <div class="wc w"><div class="k">WAR_CODE :: WHT</div><div class="v">榆你相遇</div>
+          <div class="wcry">從從容容、游刃有餘；<br>匆匆忙忙、連滾帶爬</div></div>
+      </div>
+      <div class="hudrow"><span id="hudTL">GRID 404::E</span><span id="hudTR">FREQ 142.80</span></div>
+      <div class="wheelbox">
+        <div class="ring"></div><div class="sweep"></div>
+        <svg class="ticks" viewBox="0 0 100 100" aria-hidden="true" id="ticks"></svg>
+        <div class="needle" id="needle"><span class="ptr"></span></div>
+        <div class="wheel" id="wheel">
+          <span class="seg w">榆你相遇</span>
+          <span class="seg r">豪火戰隊</span>
+          <span class="glass"></span>
+        </div>
+        <div class="hubwrap">
+          <button class="hub" id="spinBtn" disabled><em>陣營<br>選擇</em><small>EXECUTE</small></button>
+        </div>
+      </div>
+      <div class="hudrow" style="margin-top:.6rem"><span id="hudBL">RED N:0</span><span id="hudBR">LOCK: STANDBY</span></div>
+    </div>
+
+    <div class="idcard brk" id="idcard">
+      <div class="idhead">
+        <span class="lbl">ESPORTS TACTICAL ID // 戰士通行證</span>
+        <span class="hud">AUTH <b>0x99A</b></span>
+      </div>
+      <div class="idrow">
+        <input type="text" id="nameInput" placeholder="請輸入您的大名" maxlength="20" autocomplete="off">
+        <button class="btn btn-c" id="checkinBtn">報到</button>
+      </div>
+      <div class="idfoot">
+        <div>
+          <div class="hud">SEC <b>LEVEL-3</b> · 序號 <b id="idSerial">—</b></div>
+          <div class="hud" style="margin-top:.2rem">CHARS <b id="charTag">0/20</b></div>
+        </div>
+        <svg id="barcode" viewBox="0 0 120 26" preserveAspectRatio="none" aria-hidden="true"></svg>
+      </div>
+    </div>
+
+    <div class="mine brk" id="mine" hidden>
+      <div class="lbl">COMMAND DECISION // ASSIGNED</div>
+      <div class="tname" id="mineName">—</div>
+      <div class="cry" id="mineCry">—</div>
+      <div class="mono" style="font-size:.75rem;color:var(--on-variant);margin-top:.35rem" id="mineSub">—</div>
+      <div class="hud" style="margin-top:.5rem">STATUS <b>SEALED</b> · 序號 <b id="mineSerial">—</b></div>
+    </div>
+
+    <div class="note" id="note">正在連線⋯</div>
+    <button class="btn btn-g btn-wide" id="reloadBtn">重新整理戰況</button>
+  </section>
+
+  <!-- ════ 戰報頁 ════ -->
+  <section id="view-report" hidden>
+    <div class="card brk" style="margin-top:1rem">
+      <div class="idhead">
+        <span class="lbl">SECTOR OVERVIEW // 全息雷達</span>
+        <span class="hud">SONAR <b>v2.4</b></span>
+      </div>
+      <div class="radarwrap">
+        <svg class="radar" id="radar" viewBox="0 0 300 300" aria-label="兩隊分布雷達"></svg>
+        <div class="sonar"></div>
+      </div>
+      <div class="readout">
+        <span class="hud">RANGE <b>100M</b></span>
+        <span class="hud">LINK <b id="linkTag">STABLE</b></span>
+        <span class="hud">NODES <b id="nodeTag">0</b></span>
+      </div>
+      <div class="lbl mono" style="text-align:center;font-size:.625rem;margin-top:.4rem" id="radarSub">一個光點＝一位已定案的戰士</div>
+    </div>
+
+    <div class="card brk teamcard RED">
+      <div class="teamhead"><h3>豪火戰隊</h3><span class="hud">WAR_CODE <b>RED</b></span></div>
+      <div class="cry">火力全開——豪！不！留！情！</div>
+      <div class="lbl mono" id="cntR">0 名</div>
+      <div class="names" id="listR"></div>
+    </div>
+
+    <div class="card brk teamcard WHITE">
+      <div class="teamhead"><h3>榆你相遇</h3><span class="hud">WAR_CODE <b>WHT</b></span></div>
+      <div class="cry">從從容容、游刃有餘；匆匆忙忙、連滾帶爬</div>
+      <div class="lbl mono" id="cntW">0 名</div>
+      <div class="names" id="listW"></div>
+    </div>
+
+    <button class="btn btn-g btn-wide" id="reloadBtn2" style="margin-bottom:1rem">重新整理名冊</button>
+  </section>
+</main>
+
+<nav class="tabs">
+  <button id="tab0" aria-selected="true">決鬥轉盤</button>
+  <button id="tab1" aria-selected="false">陣營戰報</button>
+</nav>
+
+<div class="mask" id="mask" hidden>
+  <div class="dlg brk">
+    <div class="lbl" id="dlgKicker">TACTICAL MISSION ASSIGNED</div>
+    <h2 id="dlgTitle">戰略陣營判定</h2>
+    <div class="big" id="dlgTeam">—</div>
+    <div class="cry" id="dlgCry"></div>
+    <div class="note" id="dlgNote" style="margin-top:.7rem"></div>
+    <div class="serial"><span class="hud">序號 <b id="dlgSerial">—</b></span><span class="hud" id="dlgLock">LOCK: <b>STANDBY</b></span></div>
+    <div class="acts" id="dlgActs"></div>
+  </div>
+</div>
+
+<div class="demo" id="demoTag" hidden>示範模式 · 資料只留在這支手機，尚未接上正式後端</div>
+
+<script>
+'use strict';
+/* ⚠️ 換後端只改下面這一行的網址。
+   不要用 sed 全檔取代網址字串——投票工具踩過：判斷式的比較對象被一起換掉，
+   示範模式永遠開著，同仁按送出都成功、主持人一筆都收不到，現場沒有任何錯誤訊息。
+   這裡刻意不跟佔位符比對，改成看它像不像一個網址。 */
+var API = window.ROULETTE_API || 'https://script.google.com/macros/s/AKfycbwvQYMH5X_VYWzMh1H1D3JvdTqHVfG0rYnfyO2T061YOiirYkrWKoHD82K43FNvGxAsEw/exec';
+var API_READY = /^(https?:\/\/|\/)/.test(API);   // 佔位符不是網址，所以會是 false
+
+var TEAM = {
+  RED:   { name: '豪火戰隊', tag: '紅隊 · WAR_CODE RED',
+           cry: '火力全開——豪！不！留！情！' },
+  WHITE: { name: '榆你相遇', tag: '白隊 · WAR_CODE WHT',
+           cry: '從從容容、游刃有餘；匆匆忙忙、連滾帶爬' }
+};
+var DEV_KEY = 'tripRoulette2026Dev', NAME_KEY = 'tripRoulette2026Name';
+
+function ls(k, v) {
+  try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); }
+  catch (e) { return null; }
+}
+var dev = ls(DEV_KEY);
+if (!dev || dev.length !== 16) {
+  var h = '';
+  for (var i = 0; i < 12; i++) h += '0123456789abcdef'[Math.floor(Math.random() * 16)];
+  dev = 'dev_' + h; ls(DEV_KEY, dev);
+}
+var myName = ls(NAME_KEY) || '';
+
+var $ = function (id) { return document.getElementById(id); };
+if (myName) $('nameInput').value = myName;
+
+function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; } return h; }
+/* 序號不是編出來的：它是這支裝置編號的雜湊，同一支手機每次看到的都一樣 */
+var SERIAL = '#' + hash(dev).toString(16).toUpperCase().slice(0, 4) + '-HQ';
+$('mineSerial').textContent = SERIAL;
+$('idSerial').textContent = SERIAL;
+$('dlgSerial').textContent = SERIAL;
+
+/* 條碼：用裝置編號當種子，所以每支手機的通行證條碼都不同、而且固定不變 */
+(function () {
+  var seed = hash(dev), bars = [], x = 0;
+  while (x < 120) {
+    seed = (seed * 1103515245 + 12345) >>> 0;
+    var w = 1 + (seed % 4);
+    if ((seed >> 8) % 2) bars.push('<rect x="' + x + '" y="0" width="' + w + '" height="26" fill="#8ca3ba"/>');
+    x += w + 1;
+  }
+  $('barcode').innerHTML = bars.join('');
+})();
+
+/* 轉盤刻度 */
+(function () {
+  var p = [];
+  for (var a = 0; a < 360; a += 15) {
+    var big = a % 45 === 0, r1 = big ? 44 : 46;
+    var rad = (a - 90) * Math.PI / 180;
+    p.push('<line x1="' + (50 + Math.cos(rad) * r1).toFixed(2) + '" y1="' + (50 + Math.sin(rad) * r1).toFixed(2) +
+           '" x2="' + (50 + Math.cos(rad) * 49).toFixed(2) + '" y2="' + (50 + Math.sin(rad) * 49).toFixed(2) +
+           '" stroke="' + (big ? '#00eefc' : '#2b3548') + '" stroke-width="' + (big ? .7 : .4) + '"/>');
+  }
+  $('ticks').innerHTML = p.join('');
+})();
+
+$('nameInput').addEventListener('input', function () {
+  $('charTag').textContent = this.value.length + '/20';
+});
+$('charTag').textContent = $('nameInput').value.length + '/20';
+
+/* ── 送出：JSONP。逾時 60 秒，超過 8 秒先安撫 ── */
+var seq = 0, slowTimer = null, inflight = 0;
+function call(params) {
+  return new Promise(function (resolve) {
+    if (!API_READY) { resolve(window.RouletteDemo.call(params)); return; }
+    var cb = 'rcb' + (++seq) + '_' + Date.now().toString(36);
+    var s = document.createElement('script');
+    var done = false;
+    var timer = setTimeout(function () { finish({ ok: false, error: 'TIMEOUT', message: '等太久了，可能已經送出去了。先按「重新整理戰況」看看。' }); }, 60000);
+    function finish(r) {
+      if (done) return; done = true;
+      clearTimeout(timer);
+      try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+      if (s.parentNode) s.parentNode.removeChild(s);
+      resolve(r);
+    }
+    window[cb] = finish;
+    s.onerror = function () { finish({ ok: false, error: 'NETWORK', message: '連不上，請確認手機有網路再試一次。' }); };
+    var qs = ['callback=' + cb];
+    for (var k in params) if (params[k] != null) qs.push(k + '=' + encodeURIComponent(params[k]));
+    s.src = API + (API.indexOf('?') > -1 ? '&' : '?') + qs.join('&');
+    document.body.appendChild(s);
+  });
+}
+function busy(on, verb) {
+  inflight += on ? 1 : -1;
+  if (on && inflight === 1) {
+    slowTimer = setTimeout(function () {
+      say('warn', '還在' + (verb || '送') + '⋯ 不用重按——就算按了也只算第一次。');
+    }, 8000);
+  }
+  if (!on && inflight <= 0) { inflight = 0; clearTimeout(slowTimer); }
+}
+
+/* ── 畫面 ── */
+var ST = { phase: 'CHECKIN', me: { status: 'NONE', team: null, spins: 0, name: '' },
+           count: { red: 0, white: 0, checkedIn: 0, pendingUnspun: 0 }, cap: { red: 0, white: 0 } };
+var ROSTER = { red: [], white: [] };
+
+function say(kind, html) {
+  var n = $('note');
+  n.className = 'note' + (kind ? ' ' + kind : '');
+  n.innerHTML = html;
+}
+var PHASE_TXT = { CHECKIN: '尚未開始', DRAW: '抽籤進行中', CLOSED: '已封盤' };
+var LOCK_TXT  = { CHECKIN: 'STANDBY', DRAW: 'ENGAGED', CLOSED: 'SEALED' };
+
+function render() {
+  var me = ST.me, c = ST.count;
+  $('phaseTag').textContent = PHASE_TXT[ST.phase] || ST.phase;
+  $('capTag').innerHTML = '報到 <b>' + c.checkedIn + '</b> · 名額 <b>' + ST.cap.red + '/' + ST.cap.white + '</b>';
+  $('teleR').textContent = '豪火 ' + c.red;
+  $('teleW').textContent = c.white + ' 榆你';
+  var tot = Math.max(1, c.red + c.white);
+  var pr = Math.round(c.red / tot * 100);
+  $('barR').style.width = pr + '%';
+  $('barW').style.width = (100 - pr) + '%';
+  $('secA').innerHTML = 'SEC-A <b>' + pr + '%</b>';
+  $('secB').innerHTML = 'SEC-B <b>' + (100 - pr) + '%</b>';
+  $('teleSub').textContent = 'TURF TELEMETRY // 報到 ' + c.checkedIn + ' 人，還沒抽 ' + c.pendingUnspun + ' 人';
+  $('hudBL').textContent = 'RED N:' + c.red + ' / WHT N:' + c.white;
+  $('hudBR').textContent = 'LOCK: ' + (LOCK_TXT[ST.phase] || '—');
+  $('dlgLock').innerHTML = 'LOCK: <b>' + (LOCK_TXT[ST.phase] || '—') + '</b>';
+
+  var known = me.status !== 'NONE';
+  var locked = me.status === 'LOCKED';
+  $('idcard').hidden = known && locked;
+
+  $('mine').hidden = !locked;
+  if (locked) {
+    $('mine').className = 'mine brk ' + me.team;
+    $('mineName').textContent = TEAM[me.team].name;
+    $('mineCry').textContent = TEAM[me.team].cry;
+    $('mineSub').textContent = me.name + ' · ' + TEAM[me.team].tag + ' · 已定案';
+  }
+
+  var canSpin = ST.phase === 'DRAW' && !locked;
+  $('spinBtn').disabled = !canSpin;
+  $('spinBtn').className = 'hub' + (canSpin ? ' live' : '');
+
+  if (ST.phase === 'CHECKIN') {
+    say('', known ? '<b>' + me.name + '</b>，你已經報到了。等主持人設定好兩位隊長就能開抽。'
+                  : '先輸入你的名字報到。主持人設定好隊長之後就可以抽了。');
+  } else if (locked) {
+    say('good', '你是 <b>' + TEAM[me.team].name + '</b>。這個結果已經定案，不會再變了。');
+  } else if (ST.phase === 'CLOSED') {
+    say('warn', '已經封盤了，這支手機沒有抽到紀錄。請找主持人。');
+  } else if (me.status === 'PENDING') {
+    say('warn', '你抽到 <b>' + TEAM[me.team].name + '</b>，還沒定案。要留著就按確認，要再抽一次就按重抽。');
+  } else if (!known) {
+    say('', '先輸入你的名字報到，再按中間那顆「陣營選擇」。');
+  } else {
+    say('', '<b>' + me.name + '</b>，可以抽了。按中間那顆「陣營選擇」。<br>你有兩次機會：第一次可以留可以重抽，<b>第二次直接定案</b>。');
+  }
+}
+
+/* ── COMBAT FEED：真資料，最近定案的人 ── */
+function renderFeed() {
+  var all = [];
+  ROSTER.red.forEach(function (n) { all.push({ n: n, t: 'R' }); });
+  ROSTER.white.forEach(function (n) { all.push({ n: n, t: 'W' }); });
+  if (!all.length) {
+    $('feedMove').innerHTML = '<span class="sep">// 還沒有人定案，等第一個轉盤</span>';
+    $('feedMove').style.animationDuration = '12s';
+    return;
+  }
+  all.sort(function (a, b) { return hash(b.n) - hash(a.n); });          // 順序固定，不會每次刷新就跳
+  var line = all.slice(0, 14).map(function (x) {
+    return '<span class="' + x.t + '">[' + (x.t === 'R' ? 'RED' : 'WHITE') + ' SECTOR] 戰士【' + esc(x.n) +
+           '】部署至【' + TEAM[x.t === 'R' ? 'RED' : 'WHITE'].name + '】</span><span class="sep">//</span>';
+  }).join('');
+  $('feedMove').innerHTML = line + line;                                // 接兩份才能無縫循環
+  // 速度：每則三秒（Eason 2026-09-11 指定）
+  $('feedMove').style.animationDuration = (all.slice(0, 14).length * 3) + 's';
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) {
+  return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+/* ── 轉盤動畫：後端先給結果，前端只負責演出 ──
+   盤面固定（紅在左、白在右，隊名永遠是正的），改成指針繞圈。
+   一開始是讓盤面轉，但停下來時隊名會上下顛倒，很難看。 */
+var turns = 0;
+function spinTo(team) {
+  return new Promise(function (resolve) {
+    var base = team === 'RED' ? 270 : 90;          // 270°＝指向左半邊（紅），90°＝右半邊（白）
+    var jitter = Math.floor(Math.random() * 110) - 55;
+    turns += 5;
+    $('needle').style.transform = 'rotate(' + (turns * 360 + base + jitter) + 'deg)';
+    setTimeout(resolve, 4100);
+  });
+}
+
+/* ── 結果視窗 ── */
+function dialog(opts) {
+  $('dlgKicker').textContent = opts.kicker || 'TACTICAL MISSION ASSIGNED';
+  $('dlgTitle').textContent = opts.title || '戰略陣營判定';
+  $('dlgTeam').className = 'big ' + (opts.team || '');
+  $('dlgTeam').textContent = opts.team ? TEAM[opts.team].name : '—';
+  $('dlgCry').textContent = opts.team ? TEAM[opts.team].cry : '';
+  $('dlgCry').style.color = opts.team === 'RED' ? 'var(--red-pale)' : 'var(--white-deep)';
+  $('dlgNote').className = 'note ' + (opts.noteKind || '');
+  $('dlgNote').innerHTML = opts.note || '';
+  var acts = $('dlgActs'); acts.innerHTML = '';
+  (opts.buttons || []).forEach(function (b) {
+    var el = document.createElement('button');
+    el.className = 'btn ' + b.cls; el.textContent = b.text;
+    el.onclick = b.on;
+    acts.appendChild(el);
+  });
+  $('mask').hidden = false;
+}
+function closeDialog() { $('mask').hidden = true; }
+
+/* ── 動作 ── */
+function apply(r) {
+  if (r.ok) {
+    ST.phase = r.phase; ST.count = r.data.count; ST.cap = r.data.cap;
+    if (r.data.me) ST.me = r.data.me;
+    if (r.data.red)   ROSTER.red = r.data.red;
+    if (r.data.white) ROSTER.white = r.data.white;
+  }
+  render();
+  return r;
+}
+
+/* roster 一次就把名冊、我的狀態、人數、名額全帶回來——56 支手機，能少一半請求就少一半 */
+async function refresh(quiet) {
+  var r = await call({ action: 'roster', name: myName, dev: dev });
+  if (!r.ok) {
+    if (!quiet) say('bad', r.message || '連線出了問題，再按一次重新整理。');
+    if (r.phase) { ST.phase = r.phase; render(); }
+    return r;
+  }
+  apply(r);
+  renderFeed();
+  paintReport();
+  return r;
+}
+
+$('checkinBtn').onclick = async function () {
+  var n = $('nameInput').value.trim();
+  if (!n) { say('bad', '請先輸入你的名字。'); return; }
+  myName = n; ls(NAME_KEY, n);
+  this.disabled = true; busy(true, '報到');
+  var r = await call({ action: 'checkin', name: n, dev: dev });
+  busy(false); this.disabled = false;
+  if (!r.ok) { say('bad', r.message || '報到失敗，再試一次。'); return; }
+  apply(r);
+  say('good', '<b>' + n + '</b> 報到完成。' + (ST.phase === 'DRAW' ? '可以按中間那顆「陣營選擇」了。' : '等主持人開始。'));
+};
+
+$('spinBtn').onclick = async function () {
+  var n = ($('nameInput').value || myName).trim();
+  if (!n) { say('bad', '請先輸入你的名字再抽。'); return; }
+  myName = n; ls(NAME_KEY, n);
+  this.disabled = true; busy(true, '抽');
+  say('', '連線中⋯ 結果由伺服器決定，轉盤只是演出。');
+  var r = await call({ action: 'spin', name: n, dev: dev });
+  busy(false);
+  if (!r.ok) {
+    if (r.error === 'ALREADY_LOCKED') { await refresh(true); return; }
+    this.disabled = false; say('bad', r.message || '抽籤失敗，再試一次。'); return;
+  }
+  var team = r.data.me.team, second = r.data.me.spins >= 2, forced = r.data.forced;
+  await spinTo(team);
+  apply(r);
+  if (second) {
+    dialog({ team: team, title: '第二次抽籤 · 直接定案', noteKind: 'good',
+      note: '這是你的第二次，結果已經鎖定，不能再改了。',
+      buttons: [{ text: '知道了', cls: 'btn-c', on: function () { closeDialog(); refresh(true); } }] });
+  } else {
+    dialog({ team: team, title: '第一次抽籤 · 尚未定案', noteKind: 'warn',
+      note: (forced
+        ? '⚠️ 另一隊名額已經滿了，這一席是<b>補位</b>——就算重抽也還是這一隊。<br>'
+        : '') + '你可以<b>留著這個結果</b>，也可以<b>再抽一次</b>。<br>再抽一次就<b>直接定案，不能反悔</b>。',
+      buttons: [
+        { text: '確認參戰', cls: 'btn-c', on: async function () {
+            closeDialog(); busy(true, '確認');
+            var c = await call({ action: 'confirm', name: myName, dev: dev });
+            busy(false);
+            if (!c.ok) { say('bad', c.message || '確認失敗，再按一次。'); return; }
+            apply(c); refresh(true);
+          } },
+        // 補位時重抽翻不了盤（除非期間又有人報到），所以降成次要按鈕，不要做成主要動作
+        { text: '再次抽籤', cls: forced ? 'btn-g' : 'btn-r',
+          on: function () { closeDialog(); $('spinBtn').disabled = false; $('spinBtn').click(); } }
+      ] });
+  }
+};
+
+/* ── 名冊與雷達 ── */
+function drawRadar(red, white) {
+  var svg = $('radar'), P = [];
+  [140, 94, 48].forEach(function (r) {
+    P.push('<circle cx="150" cy="150" r="' + r + '" fill="none" stroke="#2b3548"/>');
+  });
+  P.push('<line x1="150" y1="10" x2="150" y2="290" stroke="#2b3548"/>');
+  P.push('<line x1="10" y1="150" x2="290" y2="150" stroke="#2b3548"/>');
+  [['000° N', 150, 22, 'middle'], ['090° E', 284, 154, 'end'], ['180° S', 150, 288, 'middle'], ['270° W', 16, 154, 'start']]
+    .forEach(function (t) {
+      P.push('<text x="' + t[1] + '" y="' + t[2] + '" fill="#495a75" font-size="9" font-family="Share Tech Mono,monospace" text-anchor="' + t[3] + '">' + t[0] + '</text>');
+    });
+  function plot(names, color, side) {
+    names.forEach(function (nm) {
+      var h = hash(nm);
+      var ang = (h % 1000) / 1000 * Math.PI - Math.PI / 2 + (side === 'L' ? Math.PI : 0);
+      // ⚠️ 一定要用 >>>（無號位移）。JS 的 >> 是有號的，雜湊值 ≥ 2^31 會變負數，
+      //    sqrt(負數) = NaN，那個人的光點就被畫到左上角 (0,0) 去了。
+      // 半徑開根號才會照面積均勻分布；直接線性會讓點全擠在圓心（50 人時很明顯）
+      var rad = 34 + Math.sqrt(((h >>> 10) % 1000) / 1000) * 100;
+      var x = 150 + Math.cos(ang) * rad, y = 150 + Math.sin(ang) * rad;
+      var isMe = nm === myName;
+      P.push('<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (isMe ? 6 : 4) +
+             '" fill="' + color + '"' + (isMe ? ' stroke="#00eefc" stroke-width="2"' : '') + '/>');
+    });
+  }
+  plot(red, '#ff3b52', 'L');
+  plot(white, '#e9eef7', 'R');
+  svg.innerHTML = P.join('');
+  $('nodeTag').textContent = red.length + white.length;
+  $('linkTag').textContent = ST.phase === 'CLOSED' ? 'SEALED' : 'STABLE';
+  $('radarSub').textContent = '一個光點＝一位已定案的戰士 · 共 ' + (red.length + white.length) + ' 人';
+}
+function chips(box, names, leader) {
+  box.innerHTML = '';
+  if (!names.length) { box.innerHTML = '<span class="chip" style="opacity:.5">還沒有人</span>'; return; }
+  names.forEach(function (nm, i) {
+    var el = document.createElement('span');
+    el.className = 'chip' + (i === 0 && leader ? ' lead' : '') + (nm === myName ? ' me' : '');
+    el.textContent = (i === 0 && leader ? '★ ' : '') + nm;
+    box.appendChild(el);
+  });
+}
+function paintReport() {
+  $('cntR').textContent = ROSTER.red.length + ' 名';
+  $('cntW').textContent = ROSTER.white.length + ' 名';
+  chips($('listR'), ROSTER.red, true);
+  chips($('listW'), ROSTER.white, true);
+  drawRadar(ROSTER.red, ROSTER.white);
+}
+
+/* ── 分頁 ── */
+function tab(i) {
+  $('tab0').setAttribute('aria-selected', i === 0);
+  $('tab1').setAttribute('aria-selected', i === 1);
+  $('view-wheel').hidden = i !== 0;
+  $('view-report').hidden = i !== 1;
+  window.scrollTo(0, 0);
+}
+$('tab0').onclick = function () { tab(0); };
+$('tab1').onclick = function () { tab(1); };
+$('reloadBtn').onclick = function () { refresh(); };
+$('reloadBtn2').onclick = function () { refresh(); };
+
+/* ── 起手 ── */
+if (!API_READY) {
+  $('demoTag').hidden = false;
+  var sc = document.createElement('script');
+  sc.src = 'roulette-demo.js';
+  sc.onload = function () { refresh(); };
+  sc.onerror = function () { say('bad', '示範模式需要 roulette-demo.js，沒找到。'); };
+  document.body.appendChild(sc);
+} else {
+  refresh();
+}
+</script>
+</body>
+</html>

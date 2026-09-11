@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>分隊轉盤 · 主持人控制台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anybody:wght@600;800;900&family=Outfit:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0b0f19;--surface:#111726;--surface-low:#0e1320;--variant:#1c2333;
+  --on:#e3e1ef;--on-variant:#8ca3ba;--outline:#495a75;--outline-2:#2b3548;
+  --cyan:#00eefc;--cyan-pale:#d3fbff;--red:#ff3b52;--red-pale:#ffb2bd;
+  --white-team:#e9eef7;--white-deep:#8fa3c4;--amber:#ffb59c;--danger:#ffb4ab;
+  --f-display:'Anybody','Noto Sans TC','PingFang TC',system-ui,sans-serif;
+  --f-body:'Outfit','Noto Sans TC','PingFang TC',system-ui,sans-serif;
+  --f-mono:'Share Tech Mono',ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--on);font-family:var(--f-body)}
+body{min-height:100dvh;padding:0 0 3rem}
+::-webkit-scrollbar{display:none}
+[hidden]{display:none!important}
+.wrap{max-width:620px;margin:0 auto;padding:0 1rem}
+header{position:sticky;top:0;z-index:10;background:rgba(11,15,25,.95);backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--outline-2);padding:.7rem 0 .6rem}
+h1{margin:0;font-family:var(--f-display);font-size:1rem;font-weight:900;letter-spacing:.03em}
+.sub{font-family:var(--f-mono);font-size:.625rem;color:var(--amber);letter-spacing:.12em}
+.card{position:relative;background:var(--surface);border:1px solid var(--outline-2);
+  border-radius:.75rem;padding:1rem;margin-top:1rem}
+.card::before,.card::after{content:'';position:absolute;width:9px;height:9px;
+  border:0 solid var(--cyan);pointer-events:none}
+.card::before{top:-1px;left:-1px;border-top-width:2px;border-left-width:2px}
+.card::after{bottom:-1px;right:-1px;border-bottom-width:2px;border-right-width:2px}
+.lbl{font-family:var(--f-display);font-size:.6875rem;font-weight:800;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--on-variant)}
+.pill{display:inline-block;font-family:var(--f-mono);font-size:.75rem;padding:.22rem .6rem;
+  border-radius:99px;border:1px solid var(--outline);background:var(--surface-low)}
+.pill.on{border-color:var(--cyan);color:var(--cyan)}
+.pill.off{border-color:#7a5a1e;color:var(--amber)}
+input,select{background:var(--surface-low);color:var(--on);border:1px solid var(--outline);
+  border-radius:.5rem;padding:.62rem .7rem;font-size:1rem;font-family:var(--f-body);width:100%}
+input:focus,select:focus{outline:none;border-color:var(--cyan)}
+.row{display:flex;gap:.5rem;margin-top:.55rem;flex-wrap:wrap}
+.row>*{flex:1;min-width:120px}
+.btn{border:none;border-radius:.5rem;padding:.66rem .9rem;font-family:var(--f-display);
+  font-weight:800;font-size:.8125rem;letter-spacing:.05em;cursor:pointer;white-space:nowrap}
+.btn-c{background:var(--cyan);color:#00272b}
+.btn-r{background:var(--red);color:#fff}
+.btn-g{background:var(--variant);color:var(--on);border:1px solid var(--outline)}
+.btn-d{background:#3a1210;color:var(--danger);border:1px solid #7a2a26}
+.btn:disabled{opacity:.45;cursor:default}
+.stat{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem}
+.stat div{flex:1;min-width:88px;background:var(--surface-low);border:1px solid var(--outline-2);
+  border-radius:.5rem;padding:.55rem .6rem}
+.stat b{display:block;font-family:var(--f-display);font-size:1.35rem;font-weight:900;line-height:1.1}
+.stat .r{color:var(--red-pale)} .stat .w{color:var(--white-team)} .stat .c{color:var(--cyan)}
+.note{margin-top:.8rem;padding:.7rem .85rem;border-radius:.6rem;font-size:.875rem;line-height:1.55;
+  border:1px solid var(--outline-2);background:var(--surface-low);color:var(--on-variant)}
+.note.warn{border-color:#7a5a1e;background:#221a08;color:var(--amber)}
+.note.bad{border-color:#7a2a26;background:#25100e;color:var(--danger)}
+.note.good{border-color:#1d5a5f;background:#072224;color:var(--cyan-pale)}
+table{width:100%;border-collapse:collapse;margin-top:.6rem;font-size:.8125rem}
+th{text-align:left;font-family:var(--f-display);font-size:.6875rem;letter-spacing:.08em;
+  color:var(--on-variant);border-bottom:1px solid var(--outline-2);padding:.35rem .3rem}
+td{padding:.4rem .3rem;border-bottom:1px solid rgba(43,53,72,.6);vertical-align:middle}
+td.act{text-align:right;white-space:nowrap}
+td .btn{padding:.28rem .5rem;font-size:.6875rem}
+.tag{font-family:var(--f-mono);font-size:.6875rem;padding:.12rem .4rem;border-radius:.3rem;
+  border:1px solid var(--outline-2)}
+.tag.RED{color:var(--red-pale);border-color:var(--red)}
+.tag.WHITE{color:var(--white-team);border-color:var(--white-deep)}
+.tag.pend{color:var(--amber);border-color:#7a5a1e}
+.tag.un{color:var(--danger);border-color:#7a2a26}
+.demo{background:#3a2a05;color:var(--amber);font-family:var(--f-mono);font-size:.6875rem;
+  text-align:center;padding:.32rem;border-bottom:1px solid #7a5a1e}
+</style>
+</head>
+<body>
+<div class="demo" id="demoTag" hidden>示範模式 · 通行碼 demo · 資料只留在這台裝置</div>
+
+<header><div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:.75rem">
+  <div>
+    <h1>分隊轉盤 · 主持人控制台</h1>
+    <div class="sub">這個連結不要貼進群組</div>
+  </div>
+  <a href="roulette.html" class="btn btn-g" style="flex:0 0 auto;text-decoration:none">回轉盤</a>
+</div></header>
+
+<main class="wrap">
+  <!-- 登入 -->
+  <section class="card" id="login">
+    <div class="lbl">ACCESS</div>
+    <div class="row"><input type="password" id="pw" placeholder="通行碼" autocomplete="off">
+      <button class="btn btn-c" id="loginBtn" style="flex:0 0 auto">進入</button></div>
+    <div class="note" id="loginNote">輸入通行碼後才會連線。</div>
+  </section>
+
+  <div id="panel" hidden>
+    <!-- 現況 -->
+    <section class="card">
+      <div class="lbl">現況</div>
+      <div style="margin-top:.5rem">
+        <span class="pill" id="phasePill">—</span>
+        <span class="pill" id="capPill">—</span>
+      </div>
+      <div class="stat">
+        <div><span class="lbl">豪火戰隊</span><b class="r" id="sRed">0</b></div>
+        <div><span class="lbl">榆你相遇</span><b class="w" id="sWhite">0</b></div>
+        <div><span class="lbl">已報到</span><b class="c" id="sIn">0</b></div>
+        <div><span class="lbl">報到未抽</span><b id="sUn">0</b></div>
+      </div>
+      <div class="note" id="statusNote">連線中⋯</div>
+      <div class="row">
+        <button class="btn btn-g" id="refreshBtn">重新整理</button>
+        <button class="btn btn-r" id="closeBtn">封盤（不再開放抽籤）</button>
+      </div>
+    </section>
+
+    <!-- 隊長 -->
+    <section class="card">
+      <div class="lbl">兩位隊長（不參加抽籤，各佔自己隊伍一席）</div>
+      <div class="row">
+        <input type="text" id="leadR" placeholder="豪火戰隊 隊長姓名" maxlength="20">
+        <input type="text" id="leadW" placeholder="榆你相遇 隊長姓名" maxlength="20">
+      </div>
+      <div class="row"><button class="btn btn-c" id="leadBtn">設定隊長並開始抽籤</button></div>
+      <div class="note">設好隊長就等於開始，同仁馬上可以抽。<b>姓名只存在試算表，不會進程式碼。</b></div>
+    </section>
+
+    <!-- 例外處理 -->
+    <section class="card">
+      <div class="lbl">現場例外</div>
+      <div class="row">
+        <input type="text" id="proxyName" placeholder="代抽：輸入姓名" maxlength="20">
+        <button class="btn btn-c" id="proxyBtn" style="flex:0 0 auto">代抽</button>
+      </div>
+      <div class="row">
+        <button class="btn btn-g" id="pendLockBtn">把暫定的人直接鎖定</button>
+        <button class="btn btn-g" id="pendResetBtn">把暫定的人退回未抽</button>
+      </div>
+      <div class="note">有人抽完第一次就關掉網頁、手機沒電，會一直佔著名額。用這兩顆收掉。</div>
+    </section>
+
+    <!-- 名冊 -->
+    <section class="card">
+      <div class="lbl">名冊</div>
+      <table><thead><tr><th>姓名</th><th>隊伍</th><th>狀態</th><th></th></tr></thead>
+        <tbody id="rosterBody"></tbody></table>
+    </section>
+
+    <!-- 危險區 -->
+    <section class="card">
+      <div class="lbl" style="color:var(--danger)">危險區</div>
+      <div class="row"><button class="btn btn-d" id="clearBtn">全部清空（重來一次）</button></div>
+      <div class="note bad">清空會刪掉所有人的抽籤結果，包含隊長。要按兩次確認。</div>
+    </section>
+  </div>
+</main>
+
+<script>
+'use strict';
+/* ⚠️ 換後端只改下面這一行的網址。判斷式不跟佔位符比對，改成看網址長得像不像真的端點。 */
+var API = window.ROULETTE_API || 'https://script.google.com/macros/s/AKfycbwvQYMH5X_VYWzMh1H1D3JvdTqHVfG0rYnfyO2T061YOiirYkrWKoHD82K43FNvGxAsEw/exec';
+var API_READY = /^(https?:\/\/|\/)/.test(API);   // 佔位符不是網址，所以會是 false
+
+var TEAM = { RED: '豪火戰隊', WHITE: '榆你相遇' };
+var $ = function (id) { return document.getElementById(id); };
+var PW = '', poll = null, clearArmed = false, closeArmed = false;
+
+var seq = 0;
+function call(params) {
+  return new Promise(function (resolve) {
+    if (!API_READY) { resolve(window.RouletteDemo.call(params)); return; }
+    var cb = 'acb' + (++seq) + '_' + Date.now().toString(36);
+    var s = document.createElement('script'), done = false;
+    var t = setTimeout(function () { finish({ ok: false, error: 'TIMEOUT', message: '等太久了，再按一次重新整理。' }); }, 60000);
+    function finish(r) {
+      if (done) return; done = true; clearTimeout(t);
+      try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+      if (s.parentNode) s.parentNode.removeChild(s);
+      resolve(r);
+    }
+    window[cb] = finish;
+    s.onerror = function () { finish({ ok: false, error: 'NETWORK', message: '連不上後端。' }); };
+    var qs = ['callback=' + cb];
+    for (var k in params) if (params[k] != null) qs.push(k + '=' + encodeURIComponent(params[k]));
+    s.src = API + (API.indexOf('?') > -1 ? '&' : '?') + qs.join('&');
+    document.body.appendChild(s);
+  });
+}
+function admin(cmd, extra) {
+  var p = { action: 'admin', pw: PW, cmd: cmd };
+  if (extra) for (var k in extra) p[k] = extra[k];
+  return call(p);
+}
+function say(kind, html) { var n = $('statusNote'); n.className = 'note ' + (kind || ''); n.innerHTML = html; }
+
+var PHASE_TXT = { CHECKIN: '尚未開始（先設隊長）', DRAW: '抽籤進行中', CLOSED: '已封盤' };
+
+function paint(d, phase) {
+  $('phasePill').textContent = PHASE_TXT[phase] || phase;
+  $('phasePill').className = 'pill ' + (phase === 'DRAW' ? 'on' : 'off');
+  $('capPill').textContent = '名額 ' + d.cap.red + ' 對 ' + d.cap.white;
+  $('sRed').textContent = d.count.red;
+  $('sWhite').textContent = d.count.white;
+  $('sIn').textContent = d.count.checkedIn;
+  $('sUn').textContent = d.count.pendingUnspun;
+  if (d.leaders && !$('leadR').value) { $('leadR').value = d.leaders.red || ''; $('leadW').value = d.leaders.white || ''; }
+
+  var diff = Math.abs(d.count.red - d.count.white);
+  if (d.count.pendingUnspun > 0)
+    say('warn', '還有 <b>' + d.count.pendingUnspun + ' 人</b>報到了沒抽。封盤前要先讓他們抽完、代抽、或刪掉，'
+      + '不然兩隊人數會差掉。' + (diff ? '目前 ' + d.count.red + ' 對 ' + d.count.white + '。' : ''));
+  else if (diff > 1)
+    say('bad', '目前 <b>' + d.count.red + ' 對 ' + d.count.white + '</b>，差了 ' + diff + ' 人——通常是手動換隊造成的。');
+  else if (phase === 'CLOSED')
+    say('good', '已封盤。最終 <b>' + d.count.red + ' 對 ' + d.count.white + '</b>。');
+  else
+    say('good', '目前 <b>' + d.count.red + ' 對 ' + d.count.white + '</b>，人都抽完了，隨時可以封盤。');
+
+  var tb = $('rosterBody'); tb.innerHTML = '';
+  (d.rows || []).forEach(function (r) {
+    var tr = document.createElement('tr');
+    var teamTag = r.team ? '<span class="tag ' + r.team + '">' + TEAM[r.team] + '</span>' : '<span class="tag un">未定</span>';
+    var st = r.status === 'LOCKED' ? (r.src === 'LEADER' ? '★ 隊長' : '已定案')
+           : r.status === 'PENDING' ? '<span class="tag pend">暫定</span>'
+           : '<span class="tag un">還沒抽</span>';
+    tr.innerHTML = '<td>' + esc(r.name) + '</td><td>' + teamTag + '</td><td>' + st + '</td>'
+      + '<td class="act"><button class="btn btn-g" data-move="' + esc(r.name) + '">換隊</button> '
+      + '<button class="btn btn-d" data-del="' + esc(r.name) + '">刪</button></td>';
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('[data-move]').forEach(function (b) {
+    b.onclick = async function () {
+      var nm = b.getAttribute('data-move');
+      var cur = (d.rows.filter(function (x) { return x.name === nm; })[0] || {}).team;
+      var to = cur === 'RED' ? 'WHITE' : 'RED';
+      if (!confirm(nm + ' → ' + TEAM[to] + '？')) return;
+      var r = await admin('move', { name: nm, team: to });
+      r.ok ? load() : say('bad', r.message);
+    };
+  });
+  tb.querySelectorAll('[data-del]').forEach(function (b) {
+    b.onclick = async function () {
+      var nm = b.getAttribute('data-del');
+      if (!confirm('把 ' + nm + ' 從名冊刪掉？')) return;
+      var r = await admin('delete', { name: nm });
+      r.ok ? load() : say('bad', r.message);
+    };
+  });
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) {
+  return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+async function load() {
+  var r = await admin('stats');
+  if (!r.ok) { say('bad', r.message || '讀不到資料'); return r; }
+  paint(r.data, r.phase);
+  return r;
+}
+
+$('loginBtn').onclick = async function () {
+  PW = $('pw').value;
+  var r = await admin('stats');
+  if (!r.ok) { $('loginNote').className = 'note bad'; $('loginNote').textContent = r.message || '進不去'; return; }
+  $('login').hidden = true; $('panel').hidden = false;
+  paint(r.data, r.phase);
+  poll = setInterval(load, 5000);     // 只有這一台在輪詢，同仁端完全不輪詢
+};
+$('pw').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('loginBtn').click(); });
+$('refreshBtn').onclick = function () { load(); };
+
+$('leadBtn').onclick = async function () {
+  var rn = $('leadR').value.trim(), wn = $('leadW').value.trim();
+  if (!rn || !wn) { say('bad', '兩位隊長的姓名都要填。'); return; }
+  if (!confirm('豪火戰隊：' + rn + '\n榆你相遇：' + wn + '\n\n設定之後同仁馬上可以開始抽，確定嗎？')) return;
+  var r = await admin('setLeaders', { red: rn, white: wn });
+  r.ok ? load() : say('bad', r.message);
+};
+
+$('closeBtn').onclick = async function () {
+  var r = await admin('close');
+  if (r.ok) { closeArmed = false; this.textContent = '封盤（不再開放抽籤）'; load(); return; }
+  if (r.error === 'UNSPUN') {
+    say('bad', '封不了：還有這些人報到了沒抽 → <b>' + (r.data.names || []).map(esc).join('、')
+      + '</b><br>先代抽或刪掉他們。');
+    return;
+  }
+  if (r.error === 'TOO_FEW') {
+    if (!closeArmed) { closeArmed = true; this.textContent = '人數太少，再按一次確認封盤';
+      say('warn', r.message + '（目前 ' + r.data.count + ' 人）'); return; }
+    var f = await admin('close', { force: '1' });
+    closeArmed = false; this.textContent = '封盤（不再開放抽籤）';
+    f.ok ? load() : say('bad', f.message);
+    return;
+  }
+  say('bad', r.message);
+};
+
+$('proxyBtn').onclick = async function () {
+  var nm = $('proxyName').value.trim();
+  if (!nm) { say('bad', '請輸入要代抽的人的姓名。'); return; }
+  var r = await admin('proxySpin', { name: nm });
+  if (!r.ok) { say('bad', r.message); return; }
+  $('proxyName').value = '';
+  say('good', nm + ' → <b>' + TEAM[r.data.me.team] + '</b>（代抽，直接定案）');
+  load();
+};
+$('pendLockBtn').onclick = async function () {
+  var r = await admin('resolvePending', { mode: 'lock' });
+  r.ok ? (say('good', '鎖定了 ' + r.data.affected + ' 位暫定中的人。'), load()) : say('bad', r.message);
+};
+$('pendResetBtn').onclick = async function () {
+  var r = await admin('resolvePending', { mode: 'reset' });
+  r.ok ? (say('good', '退回了 ' + r.data.affected + ' 位，他們要重新抽。'), load()) : say('bad', r.message);
+};
+
+$('clearBtn').onclick = async function () {
+  if (!clearArmed) { clearArmed = true; this.textContent = '真的要清空？再按一次'; 
+    setTimeout(function(){ clearArmed = false; $('clearBtn').textContent = '全部清空（重來一次）'; }, 6000); return; }
+  clearArmed = false; this.textContent = '全部清空（重來一次）';
+  var r = await admin('clearAll');
+  r.ok ? (say('warn', '已清空，回到「尚未開始」。要重新設定隊長。'), load()) : say('bad', r.message);
+};
+
+if (!API_READY) {
+  $('demoTag').hidden = false;
+  var sc = document.createElement('script');
+  sc.src = 'roulette-demo.js';
+  document.body.appendChild(sc);
+}
+</script>
+</body>
+</html>
