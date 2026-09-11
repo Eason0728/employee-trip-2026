@@ -355,6 +355,8 @@ function apiAdmin(p) {
     return okRes({
       rows: out, count: cnt, cap: caps(cnt.checkedIn, cnt.red, cnt.white),
       leaders: { red: props().getProperty('LEADER_RED') || '', white: props().getProperty('LEADER_WHITE') || '' },
+      // 手機上如果網頁出狀況，可以直接開試算表看原始資料
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/' + props().getProperty('SS_ID') + '/edit',
       gate: { openAt: props().getProperty('OPEN_AT') || '', openMin: props().getProperty('OPEN_MIN') || '' }
     });
   }

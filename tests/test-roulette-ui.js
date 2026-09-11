@@ -126,13 +126,15 @@ function backend(p) {
     if (p.cmd === 'stats') return { ok: true, phase: S.phase, data: {
       rows: S.rows.map(x => ({ name: x.name, team: x.team, status: x.status, spins: x.spins, src: x.src, role: x.role || '' })),
       count: c, cap: caps(c.checkedIn, c.red, c.white),
-      leaders: { red: '', white: '' }, gate: { openAt: '', openMin: '' } } };
+      leaders: { red: '', white: '' }, gate: { openAt: '', openMin: '' },
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/TESTSHEET/edit' } };
     if (p.cmd === 'setLeaders') {
       S.rows = S.rows.filter(x => x.src !== 'LEADER');
       S.rows.unshift({ name: p.white, dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
       S.rows.unshift({ name: p.red,   dev: '', team: 'RED',   status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
       S.phase = 'DRAW'; return snap({});
     }
+    if (p.cmd === 'open') { S.phase = 'DRAW'; return snap({}); }
     if (p.cmd === 'close') {
       const un = S.rows.filter(x => x.status === 'CHECKED_IN').map(x => x.name);
       if (un.length) return bad('UNSPUN', '還有人報到了沒抽', { names: un });
@@ -409,6 +411,23 @@ function backend(p) {
   await page.click('#closeBtn');
   await page.waitForFunction(() => document.getElementById('phasePill').textContent === '已封盤', null, { timeout: 8000 });
   eq(S.phase, 'CLOSED', '確認後封盤生效');
+
+  /* ── 10b. 封盤之後的退路 ── */
+  section('10b. 手滑封盤救得回來（員旅當天只有手機）');
+  eq(await page.$eval('#openBtn', e => e.hidden), false, '封盤後出現「重新開放抽籤」');
+  eq(await page.$eval('#closeBtn', e => e.hidden), true, '封盤後「封盤」按鈕收起來');
+  page.once('dialog', d => d.accept());
+  await page.click('#openBtn');
+  await page.waitForFunction(() => document.getElementById('phasePill').textContent === '抽籤進行中',
+    null, { timeout: 8000 });
+  eq(S.phase, 'DRAW', '重新開放生效');
+  eq(S.rows.filter(r => r.status === 'LOCKED').length > 0, true, '已經抽到的人沒有被清掉');
+  const sheetHref = await page.$eval('#sheetLink', e => e.getAttribute('href'));
+  ok(/^https:\/\/docs\.google\.com\/spreadsheets\//.test(sheetHref),
+     '「出狀況怎麼辦」裡有試算表直達連結', sheetHref);
+  const helps = await page.$$eval('details .note', es => es.length);
+  ok(helps >= 6, '出狀況怎麼辦至少有 6 條', String(helps));
+
   await ctx.close();
 
   /* ── 11. 版面 ── */

@@ -179,7 +179,8 @@ def handle(p):
                     'rows': [{'name': r['name'], 'team': r['team'], 'status': r['status'],
                               'spins': r['spins'], 'src': r['src'], 'role': r.get('role', '')} for r in rows],
                     'count': c, 'cap': caps(c['checkedIn'], c['red'], c['white']),
-                    'leaders': {'red': '', 'white': ''}, 'gate': {'openAt': '', 'openMin': ''}}}
+                    'leaders': {'red': '', 'white': ''}, 'gate': {'openAt': '', 'openMin': ''},
+                    'sheetUrl': 'https://docs.google.com/spreadsheets/d/LOCAL/edit'}}
             if cmd == 'setLeaders':
                 rn, wn = (p.get('red') or '').strip(), (p.get('white') or '').strip()
                 if not rn or not wn:

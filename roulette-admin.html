@@ -118,6 +118,7 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
       <div class="row">
         <button class="btn btn-g" id="refreshBtn">重新整理</button>
         <button class="btn btn-r" id="closeBtn">封盤（不再開放抽籤）</button>
+        <button class="btn btn-c" id="openBtn" hidden>重新開放抽籤</button>
       </div>
     </section>
 
@@ -148,6 +149,44 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
       <div class="lbl">名冊</div>
       <table><thead><tr><th>姓名</th><th>隊伍</th><th>角色</th><th>狀態</th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody></table>
+    </section>
+
+    <!-- 出狀況怎麼辦 -->
+    <section class="card">
+      <details>
+        <summary class="lbl" style="cursor:pointer;list-style:none">出狀況怎麼辦（點開）</summary>
+        <div class="note" style="margin-top:.7rem">
+          <b>手滑按了封盤</b><br>上面會出現「重新開放抽籤」，按下去就好，已經抽到的人不受影響。
+        </div>
+        <div class="note">
+          <b>有人名字打錯</b><br>在下面名冊按「刪」，請他用正確的名字重新抽一次。
+        </div>
+        <div class="note">
+          <b>有人要換隊</b><br>名冊按「換隊」。⚠ 換隊之後角色會重新配一次。
+        </div>
+        <div class="note">
+          <b>有人抽一半就關掉網頁，卡在「暫定」</b><br>
+          按「把暫定的人直接鎖定」，他抽到什麼就是什麼；或「退回未抽」讓他重抽。
+        </div>
+        <div class="note">
+          <b>封盤按不下去</b><br>
+          有人報到了卻沒抽，畫面會列出是誰。請他抽完，或在名冊把他刪掉。
+        </div>
+        <div class="note">
+          <b>網頁整個打不開</b><br>
+          資料都在試算表裡，手機也能開：<a id="sheetLink" href="#" target="_blank"
+          style="color:var(--cyan)">開啟試算表</a>。最壞的情況就是照試算表上的名單用喊的。
+        </div>
+        <div class="note">
+          <b>要改網頁上的字</b>（隊名、隊呼、角色名稱、跑馬燈速度）<br>
+          手機版 Claude Code 開 <b>Eason0728/employee-trip-2026</b>，改 <b>roulette.html</b>
+          最上面的 TEAM／ROLES／CONFIG 區塊，推上去約 20 秒生效。
+        </div>
+        <div class="note bad">
+          <b>要改抽籤規則</b>（名額算法、人數上限）<br>
+          那在 Google Apps Script，手機上很難改。找我，我給你可以直接貼的完整程式碼。
+        </div>
+      </details>
     </section>
 
     <!-- 危險區 -->
@@ -204,6 +243,9 @@ var PHASE_TXT = { CHECKIN: '尚未開始（先設隊長）', DRAW: '抽籤進行
 function paint(d, phase) {
   $('phasePill').textContent = PHASE_TXT[phase] || phase;
   $('phasePill').className = 'pill ' + (phase === 'DRAW' ? 'on' : 'off');
+  $('openBtn').hidden = phase !== 'CLOSED';           // 封盤之後才出現，就是那條退路
+  $('closeBtn').hidden = phase === 'CLOSED';
+  if (d.sheetUrl) $('sheetLink').setAttribute('href', d.sheetUrl);
   $('capPill').textContent = '名額 ' + d.cap.red + ' 對 ' + d.cap.white;
   $('sRed').textContent = d.count.red;
   $('sWhite').textContent = d.count.white;
@@ -280,6 +322,12 @@ $('leadBtn').onclick = async function () {
   if (!rn || !wn) { say('bad', '兩位隊長的姓名都要填。'); return; }
   if (!confirm('豪火戰隊：' + rn + '\n榆你相遇：' + wn + '\n\n設定之後同仁馬上可以開始抽，確定嗎？')) return;
   var r = await admin('setLeaders', { red: rn, white: wn });
+  r.ok ? load() : say('bad', r.message);
+};
+
+$('openBtn').onclick = async function () {
+  if (!confirm('重新開放抽籤？\n已經抽到的人不受影響，還沒抽的人可以繼續抽。')) return;
+  var r = await admin('open');
   r.ok ? load() : say('bad', r.message);
 };
 
