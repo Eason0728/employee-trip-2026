@@ -104,7 +104,7 @@ function boot() {
   const fn = new Function(
     'SpreadsheetApp', 'PropertiesService', 'LockService', 'ContentService', 'exports',
     CODE + '\n;Object.assign(exports,{doGet:doGet,route:route,setup:setup,caps:caps,' +
-           'readRoster:readRoster,counts:counts,nowIso:nowIso,setRng:setRng});'
+           'readRoster:readRoster,counts:counts,nowIso:nowIso,setRng:setRng,ensure:ensure,HEAD_R:HEAD_R});'
   );
   fn(env.SpreadsheetApp, env.PropertiesService, env.LockService, env.ContentService, sandbox);
   sandbox.setup();
@@ -229,6 +229,53 @@ section('4. 第一位抽的人必須是真的 50/50');
      `換隊 ${(rate * 100).toFixed(1)}%（${diff}／${same + diff}）`);
 }
 
+/* ══════════════════ 4b. 三個角色 ══════════════════ */
+section('4b. 突擊手／重炮手／狙擊手（同隊內平均分配）');
+{
+  const B = boot();
+  const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
+  A({ cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  for (let i = 0; i < 42; i++) {
+    B.route({ action: 'checkin', name: 'P' + i, dev: dev(i) });
+  }
+  for (let i = 0; i < 42; i++) {
+    B.route({ action: 'spin', name: 'P' + i, dev: dev(i) });
+    B.route({ action: 'confirm', name: 'P' + i, dev: dev(i) });
+  }
+  const st = A({ cmd: 'stats' }).data.rows;
+  eq(st.filter(r => r.src === 'LEADER').every(r => r.role === 'LEADER'), true, '兩位隊長的角色是 LEADER');
+  eq(st.filter(r => r.status === 'LOCKED' && !r.role).length, 0, '每個定案的人都有角色');
+  ['RED', 'WHITE'].forEach(team => {
+    const n = { ASSAULT: 0, CANNON: 0, SNIPER: 0 };
+    st.filter(r => r.team === team && r.src !== 'LEADER').forEach(r => { n[r.role]++; });
+    const spread = Math.max(n.ASSAULT, n.CANNON, n.SNIPER) - Math.min(n.ASSAULT, n.CANNON, n.SNIPER);
+    ok(spread <= 1, `${team} 三個角色人數差距不超過 1`,
+       `突擊 ${n.ASSAULT} 重炮 ${n.CANNON} 狙擊 ${n.SNIPER}`);
+    eq(n.ASSAULT + n.CANNON + n.SNIPER, 21, `${team} 21 個非隊長的人都配到角色`);
+  });
+  // 同一個角色不會全部集中在同一個人身上——三種都要出現
+  const kinds = new Set(st.filter(r => r.src !== 'LEADER').map(r => r.role));
+  eq(kinds.size, 3, '三個角色都有人');
+}
+{
+  const B = boot();
+  const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
+  A({ cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  B.route({ action: 'checkin', name: '甲', dev: dev(1) });
+  B.route({ action: 'spin', name: '甲', dev: dev(1) });
+  eq(B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.role, '', '還是暫定時沒有角色');
+  B.route({ action: 'confirm', name: '甲', dev: dev(1) });
+  const role = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.role;
+  ok(['ASSAULT', 'CANNON', 'SNIPER'].indexOf(role) > -1, '定案才配角色', role);
+  A({ cmd: 'resolvePending', mode: 'reset' });
+  const before = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.role;
+  eq(before, role, '已定案的人不受「退回暫定」影響');
+  const other = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.team === 'RED' ? 'WHITE' : 'RED';
+  A({ cmd: 'move', name: '甲', team: other });
+  const after = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.role;
+  ok(['ASSAULT', 'CANNON', 'SNIPER'].indexOf(after) > -1, '換隊之後重新配角色', after);
+}
+
 /* ══════════════════ 5. 狀態機 ══════════════════ */
 section('5. 兩次機會的狀態轉換（spec §4.3）');
 {
@@ -305,7 +352,7 @@ section('7. API 契約欄位逐字比對');
   eq(r.ok, true, 'state.ok');
   eq(r.phase, 'DRAW', 'state.phase 是 DRAW');
   eq(JSON.stringify(Object.keys(r.data).sort()), '["cap","count","me"]', 'state.data 只有 cap／count／me');
-  eq(JSON.stringify(Object.keys(r.data.me).sort()), '["name","spins","status","team"]', 'me 的欄位');
+  eq(JSON.stringify(Object.keys(r.data.me).sort()), '["name","role","spins","status","team"]', 'me 的欄位');
   eq(JSON.stringify(Object.keys(r.data.count).sort()),
      '["checkedIn","pendingUnspun","red","white"]', 'count 的欄位');
   eq(JSON.stringify(Object.keys(r.data.cap).sort()), '["red","white"]', 'cap 的欄位');
@@ -434,6 +481,19 @@ ok(CODE.indexOf('LockService.getScriptLock') > -1, '.gs 裡真的有用 LockServ
 ok(CODE.indexOf(PW) > -1, '.gs 裡的通行碼是佔位符，沒有把真的那組寫進去');
 ok(!/[一-龥]{2,4}(隊長|經理)?\s*=\s*['"][一-龥]/.test(CODE), '.gs 沒有寫死任何人的姓名');
 ok(CODE.indexOf('CAP_FLOOR') > -1, '起始名額下限是具名常數，不是散在程式裡的魔術數字');
+
+// 尾端加欄位時，既有試算表的表頭要自動補齊（不然新欄位沒有標題）
+{
+  const B = boot();
+  const sh = B._env._sheets['名冊'];
+  sh.rows[0] = ['報到時間', '姓名', '裝置編號', '隊伍', '狀態', '抽籤次數', '更新時間', '來源'];  // 舊表頭
+  sh.rows.push(['t', '舊資料', '', 'RED', 'LOCKED', 1, 't', 'SELF']);
+  // 正式環境每個請求都是全新執行，ensure() 一定會跑到；這裡直接呼叫它驗邏輯
+  B.ensure('名冊', B.HEAD_R);
+  eq(sh.rows[0].length, 9, '舊表格的表頭會補成 9 欄');
+  eq(sh.rows[0][8], '角色', '補上去的是「角色」');
+  eq(sh.rows[1][1], '舊資料', '既有資料沒被動到');
+}
 
 /* ══════════════════ 收尾 ══════════════════ */
 console.log(`\n${pass} passed, ${fail} failed`);

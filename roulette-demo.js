@@ -12,6 +12,7 @@
   'use strict';
   var KEY = 'tripRoulette2026DemoState';
   var CAP_FLOOR = 6, MAX_PEOPLE = 56, MIN_CLOSE = 12, PW = 'demo';
+  var ROLE_KEYS = ['ASSAULT', 'CANNON', 'SNIPER'];
 
   function load() {
     try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch (e) { return null; }
@@ -42,13 +43,23 @@
     if (remW <= 0) return { team: 'RED', forced: true };
     return { team: Math.random() < remR / (remR + remW) ? 'RED' : 'WHITE', forced: false };
   }
+  function pickRole(rows, team) {
+    var n = { ASSAULT: 0, CANNON: 0, SNIPER: 0 };
+    rows.forEach(function (r) {
+      if (r.team !== team || r.status !== 'LOCKED') return;
+      if (n[r.role] != null) n[r.role]++;
+    });
+    var min = Math.min(n.ASSAULT, n.CANNON, n.SNIPER);
+    var pool = ROLE_KEYS.filter(function (k) { return n[k] === min; });
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
   function find(rows, n) { for (var i = 0; i < rows.length; i++) if (rows[i].name === n) return rows[i]; return null; }
   function me(rows, p) {
     var n = String(p.name || '').trim();
     var r = n ? find(rows, n) : null;
     if (!r && p.dev) rows.forEach(function (x) { if (x.dev === p.dev) r = x; });
-    return r ? { name: r.name, team: r.team, status: r.status, spins: r.spins }
-             : { name: '', team: null, status: 'NONE', spins: 0 };
+    return r ? { name: r.name, team: r.team, status: r.status, spins: r.spins, role: r.role || '' }
+             : { name: '', team: null, status: 'NONE', spins: 0, role: '' };
   }
   function snap(s, p, extra) {
     var c = counts(s.rows);
@@ -70,7 +81,8 @@
       var red = [], white = [];
       if (s.phase !== 'CHECKIN') s.rows.forEach(function (r) {
         if (r.status !== 'LOCKED') return;
-        if (r.team === 'RED') red.push(r.name); else if (r.team === 'WHITE') white.push(r.name);
+        var one = { name: r.name, role: r.role || '' };
+        if (r.team === 'RED') red.push(one); else if (r.team === 'WHITE') white.push(one);
       });
       var c = counts(s.rows);
       return { ok: true, phase: s.phase, data: { red: red, white: white, me: me(s.rows, p),
@@ -81,7 +93,7 @@
       if (!n) return bad(s, 'BAD_NAME', '請先輸入姓名');
       if (find(s.rows, n)) return snap(s, p);
       if (s.rows.length >= MAX_PEOPLE) return bad(s, 'ROSTER_FULL', '人數已經滿了（上限 56 人）');
-      s.rows.push({ name: n, dev: p.dev || '', team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF' });
+      s.rows.push({ name: n, dev: p.dev || '', team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF', role: '' });
       save(s); return snap(s, p);
     }
 
@@ -91,7 +103,7 @@
       var r = find(s.rows, n);
       if (!r) {
         if (s.rows.length >= MAX_PEOPLE) return bad(s, 'ROSTER_FULL', '人數已經滿了（上限 56 人）');
-        r = { name: n, dev: p.dev || '', team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF' };
+        r = { name: n, dev: p.dev || '', team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF', role: '' };
         s.rows.push(r);
       }
       if (r.status === 'LOCKED') return bad(s, 'ALREADY_LOCKED', '你已經抽完了');
@@ -99,6 +111,7 @@
       if (second) r.team = null;
       var c2 = counts(s.rows), got = pick(caps(c2.checkedIn, c2.red, c2.white), c2);
       r.team = got.team; r.status = second ? 'LOCKED' : 'PENDING'; r.spins = second ? 2 : 1;
+      r.role = second ? pickRole(s.rows, got.team) : '';
       save(s); return snap(s, p, { forced: got.forced });
     }
 
@@ -107,7 +120,9 @@
       if (!cf) return bad(s, 'NO_SUCH_NAME', '找不到這個名字');
       if (cf.status === 'LOCKED') return bad(s, 'ALREADY_LOCKED', '你已經抽完了');
       if (cf.status !== 'PENDING') return bad(s, 'NOT_PENDING', '還沒抽過');
-      cf.status = 'LOCKED'; save(s); return snap(s, p);
+      cf.status = 'LOCKED';
+      if (!cf.role) cf.role = pickRole(s.rows, cf.team);
+      save(s); return snap(s, p);
     }
 
     if (a === 'admin') {
@@ -116,7 +131,7 @@
       if (cmd === 'stats') {
         var c3 = counts(s.rows);
         return { ok: true, phase: s.phase, data: {
-          rows: s.rows.map(function (x) { return { name: x.name, team: x.team, status: x.status, spins: x.spins, src: x.src }; }),
+          rows: s.rows.map(function (x) { return { name: x.name, team: x.team, status: x.status, spins: x.spins, src: x.src, role: x.role || '' }; }),
           count: c3, cap: caps(c3.checkedIn, c3.red, c3.white), leaders: s.leaders, gate: { openAt: '', openMin: '' } } };
       }
       if (cmd === 'setLeaders') {
@@ -125,8 +140,8 @@
         if (rn === wn) return bad(s, 'BAD_NAME', '兩位隊長不能是同一個人');
         s.rows = s.rows.filter(function (x) { return x.src !== 'LEADER'; });
         s.rows = s.rows.filter(function (x) { return x.name !== rn && x.name !== wn; });
-        s.rows.unshift({ name: wn, dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER' });
-        s.rows.unshift({ name: rn, dev: '', team: 'RED', status: 'LOCKED', spins: 0, src: 'LEADER' });
+        s.rows.unshift({ name: wn, dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
+        s.rows.unshift({ name: rn, dev: '', team: 'RED', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
         s.leaders = { red: rn, white: wn }; s.phase = 'DRAW'; save(s); return snap(s, {});
       }
       if (cmd === 'open') { s.phase = 'DRAW'; save(s); return snap(s, {}); }
@@ -135,13 +150,18 @@
         if (un.length) return bad(s, 'UNSPUN', '還有人報到了沒抽，先讓他抽完或把他刪掉', { names: un });
         if (s.rows.length < MIN_CLOSE && String(p.force || '') !== '1')
           return bad(s, 'TOO_FEW', '報到不到 12 人，確認要封嗎', { count: s.rows.length });
-        s.rows.forEach(function (x) { if (x.status === 'PENDING') x.status = 'LOCKED'; });
+        s.rows.forEach(function (x) {
+          if (x.status !== 'PENDING') return;
+          x.status = 'LOCKED'; if (!x.role) x.role = pickRole(s.rows, x.team);
+        });
         s.phase = 'CLOSED'; save(s); return snap(s, {});
       }
       if (cmd === 'move') {
         var mv = find(s.rows, n); if (!mv) return bad(s, 'NO_SUCH_NAME', '找不到這個名字');
         if (p.team !== 'RED' && p.team !== 'WHITE') return bad(s, 'BAD_TEAM', '隊伍只能是 RED 或 WHITE');
-        mv.team = p.team; mv.status = 'LOCKED'; save(s); return snap(s, {});
+        mv.team = p.team; mv.status = 'LOCKED';
+        mv.role = (mv.src === 'LEADER') ? 'LEADER' : pickRole(s.rows, p.team);
+        save(s); return snap(s, {});
       }
       if (cmd === 'delete') {
         var idx = s.rows.findIndex(function (x) { return x.name === n; });
@@ -153,7 +173,8 @@
         s.rows.forEach(function (x) {
           if (x.status !== 'PENDING') return;
           if (n && x.name !== n) return;
-          if (mode === 'reset') { x.team = null; x.status = 'CHECKED_IN'; x.spins = 0; } else { x.status = 'LOCKED'; }
+          if (mode === 'reset') { x.team = null; x.status = 'CHECKED_IN'; x.spins = 0; x.role = ''; }
+          else { x.status = 'LOCKED'; if (!x.role) x.role = pickRole(s.rows, x.team); }
           k++;
         });
         save(s); return snap(s, {}, { affected: k });

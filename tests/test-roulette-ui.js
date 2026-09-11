@@ -28,6 +28,14 @@ function section(t) { console.log('\n── ' + t); }
 
 /* ══════════ 假後端（與 .gs 同一套規則） ══════════ */
 const CAP_FLOOR = 6, MAX_PEOPLE = 56, PW = 'testpw';
+const ROLE_KEYS = ['ASSAULT', 'CANNON', 'SNIPER'];
+function pickRole(rows, team) {
+  const n = { ASSAULT: 0, CANNON: 0, SNIPER: 0 };
+  rows.forEach(r => { if (r.team === team && r.status === 'LOCKED' && n[r.role] != null) n[r.role]++; });
+  const lo = Math.min(n.ASSAULT, n.CANNON, n.SNIPER);
+  const pool = ROLE_KEYS.filter(k => n[k] === lo);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 function newState() { return { phase: 'CHECKIN', rows: [] }; }
 let S = newState();
 const hits = [];                                   // 記錄每一次請求，用來驗「同仁端不輪詢」
@@ -58,8 +66,8 @@ function meOf(rows, p) {
   const n = (p.name || '').trim();
   let r = n ? find(rows, n) : null;
   if (!r && p.dev) r = rows.find(x => x.dev === p.dev) || null;
-  return r ? { name: r.name, team: r.team, status: r.status, spins: r.spins }
-           : { name: '', team: null, status: 'NONE', spins: 0 };
+  return r ? { name: r.name, team: r.team, status: r.status, spins: r.spins, role: r.role || '' }
+           : { name: '', team: null, status: 'NONE', spins: 0, role: '' };
 }
 function snap(p, extra) {
   const c = counts(S.rows);
@@ -76,7 +84,7 @@ function backend(p) {
     const red = [], white = [];
     if (S.phase !== 'CHECKIN') S.rows.forEach(r => {
       if (r.status !== 'LOCKED') return;
-      (r.team === 'RED' ? red : white).push(r.name);
+      (r.team === 'RED' ? red : white).push({ name: r.name, role: r.role || '' });
     });
     const c = counts(S.rows);
     return { ok: true, phase: S.phase, data: { red, white, me: meOf(S.rows, p), count: c,
@@ -99,6 +107,7 @@ function backend(p) {
     if (second) r.team = null;
     const c = counts(S.rows), g = pick(caps(c.checkedIn, c.red, c.white), c);
     r.team = g.team; r.status = second ? 'LOCKED' : 'PENDING'; r.spins = second ? 2 : 1;
+    r.role = second ? pickRole(S.rows, g.team) : '';
     if (truncateNextSpin) { truncateNextSpin = false; return '__TRUNCATED__'; }
     return snap(p, { forced: g.forced });
   }
@@ -107,29 +116,32 @@ function backend(p) {
     if (!r) return bad('NO_SUCH_NAME', '找不到這個名字');
     if (r.status === 'LOCKED') return bad('ALREADY_LOCKED', '你已經抽完了');
     if (r.status !== 'PENDING') return bad('NOT_PENDING', '還沒抽過');
-    r.status = 'LOCKED'; return snap(p);
+    r.status = 'LOCKED';
+    if (!r.role) r.role = pickRole(S.rows, r.team);
+    return snap(p);
   }
   if (p.action === 'admin') {
     if (p.pw !== PW) return bad('BAD_PW', '通行碼不對');
     const c = counts(S.rows);
     if (p.cmd === 'stats') return { ok: true, phase: S.phase, data: {
-      rows: S.rows.map(x => ({ name: x.name, team: x.team, status: x.status, spins: x.spins, src: x.src })),
+      rows: S.rows.map(x => ({ name: x.name, team: x.team, status: x.status, spins: x.spins, src: x.src, role: x.role || '' })),
       count: c, cap: caps(c.checkedIn, c.red, c.white),
       leaders: { red: '', white: '' }, gate: { openAt: '', openMin: '' } } };
     if (p.cmd === 'setLeaders') {
       S.rows = S.rows.filter(x => x.src !== 'LEADER');
-      S.rows.unshift({ name: p.white, dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER' });
-      S.rows.unshift({ name: p.red,   dev: '', team: 'RED',   status: 'LOCKED', spins: 0, src: 'LEADER' });
+      S.rows.unshift({ name: p.white, dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
+      S.rows.unshift({ name: p.red,   dev: '', team: 'RED',   status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
       S.phase = 'DRAW'; return snap({});
     }
     if (p.cmd === 'close') {
       const un = S.rows.filter(x => x.status === 'CHECKED_IN').map(x => x.name);
       if (un.length) return bad('UNSPUN', '還有人報到了沒抽', { names: un });
       if (S.rows.length < 12 && p.force !== '1') return bad('TOO_FEW', '報到不到 12 人', { count: S.rows.length });
-      S.rows.forEach(x => { if (x.status === 'PENDING') x.status = 'LOCKED'; });
+      S.rows.forEach(x => { if (x.status === 'PENDING') { x.status = 'LOCKED'; if (!x.role) x.role = pickRole(S.rows, x.team); } });
       S.phase = 'CLOSED'; return snap({});
     }
-    if (p.cmd === 'move') { const r = find(S.rows, n); r.team = p.team; r.status = 'LOCKED'; return snap({}); }
+    if (p.cmd === 'move') { const r = find(S.rows, n); r.team = p.team; r.status = 'LOCKED';
+      r.role = r.src === 'LEADER' ? 'LEADER' : pickRole(S.rows, p.team); return snap({}); }
     if (p.cmd === 'delete') { S.rows = S.rows.filter(x => x.name !== n); return snap({}); }
     if (p.cmd === 'resolvePending') {
       let k = 0;
@@ -177,7 +189,7 @@ function backend(p) {
   eq(await txt(page, '#phaseTag'), '尚未開始', '頁首顯示尚未開始');
   eq(await page.$eval('#spinBtn', e => e.disabled), true, '還沒設隊長時轉盤按鈕是鎖的');
   ok((await txt(page, '#note')).includes('報到'), '提示要先報到');
-  eq(await txt(page, '#spinBtn'), '陣營選擇EXECUTE', '中間那顆寫「陣營選擇」');
+  eq(await txt(page, '#spinBtn'), '選擇陣營EXECUTE', '中間那顆寫「選擇陣營」');
   // 裝置編號還在（識別身分要用），只是不再印在畫面上——Eason 2026-09-11 要求拿掉
   const devId = await page.evaluate(() => localStorage.getItem('tripRoulette2026Dev'));
   ok(/^dev_[0-9a-f]{12}$/.test(devId), '裝置編號格式 dev_ + 12 碼十六進位', devId);
@@ -197,8 +209,8 @@ function backend(p) {
 
   /* ── 3. 開盤後第一次抽 ── */
   section('3. 第一次抽籤：可留可重抽');
-  S.rows.unshift({ name: '白隊長', dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER' });
-  S.rows.unshift({ name: '紅隊長', dev: '', team: 'RED', status: 'LOCKED', spins: 0, src: 'LEADER' });
+  S.rows.unshift({ name: '白隊長', dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
+  S.rows.unshift({ name: '紅隊長', dev: '', team: 'RED', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
   S.phase = 'DRAW';
   await page.click('#reloadBtn');
   await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 8000 });
@@ -207,7 +219,7 @@ function backend(p) {
   await page.click('#spinBtn');
   await page.waitForSelector('#mask:not([hidden])', { timeout: 15000 });
   const t1 = await txt(page, '#dlgTeam');
-  ok(t1 === '豪火戰隊' || t1 === '榆你相遇', '第一次抽到的是兩隊之一', t1);
+  ok(t1 === '豪火戰隊' || t1 === '榆你相遇隊', '第一次抽到的是兩隊之一', t1);
   ok((await txt(page, '#dlgTitle')).includes('尚未定案'), '第一次的標題寫「尚未定案」');
   ok((await txt(page, '#dlgNote')).includes('不能反悔'), '有寫明再抽一次就不能反悔');
   const btns = await page.$$eval('#dlgActs .btn', es => es.map(e => e.textContent));
@@ -292,8 +304,15 @@ function backend(p) {
   ok(chipsR[0].startsWith('★'), '紅隊第一個是隊長，有星號');
   ok(chipsW[0].startsWith('★'), '白隊第一個是隊長，有星號');
   eq(chipsR.length + chipsW.length, locked, '兩隊名冊人數合計＝已定案人數');
-  const mine = await page.$$eval('.chip.me', es => es.map(e => e.textContent));
-  eq(JSON.stringify(mine), '["測試乙"]', '自己的名字有標出來');
+  const mine = await page.$$eval('.chip.me .rl', es => es.map(e => e.textContent));
+  eq(mine.length, 1, '自己那張有標出來');
+  ok(['突擊手','重炮手','狙擊手'].indexOf(mine[0]) > -1, '自己那張顯示角色', mine[0]);
+  const leadRole = await page.$eval('#listR .chip.lead .rl', e => e.textContent);
+  eq(leadRole, '隊長', '隊長那張寫「隊長」，不占三個角色');
+  const bar = await page.$$eval('#roleR span', es => es.map(e => e.textContent));
+  eq(bar.length, 3, '隊伍卡上有三個角色的人數統計');
+  ok(bar[0].startsWith('突擊手') && bar[1].startsWith('重炮手') && bar[2].startsWith('狙擊手'),
+     '統計依序是突擊手／重炮手／狙擊手', JSON.stringify(bar));
 
   // ⚠️ 「測試甲」「測試乙」的雜湊值都 ≥ 2^31。用有號位移 >> 會變負數，
   //    sqrt(負數)=NaN，那兩個人的光點會被畫到左上角 (0,0)——肉眼只看到一個小白點。
@@ -303,8 +322,26 @@ function backend(p) {
   eq(JSON.stringify(strayDots), '[]', '雷達光點都落在圓內，沒有 NaN 跑到左上角');
   ok((await txt(page, '#radarSub')).includes('已定案的戰士'), '雷達說明用「戰士」不是「特工」');
   const cries = await page.$$eval('#view-report .cry', es => es.map(e => e.textContent));
-  eq(JSON.stringify(cries), JSON.stringify(['火力全開——豪！不！留！情！','從從容容、游刃有餘；匆匆忙忙、連滾帶爬']),
-     '兩隊名字旁邊各有自己的隊呼');
+  eq(JSON.stringify(cries), JSON.stringify(['隊呼：火力全開——豪！不！留！情！','隊呼：從從容容、游刃有餘；匆匆忙忙、連滾帶爬']),
+     '兩隊名字下面各有自己的隊呼，前面帶「隊呼：」');
+  eq(await page.$$eval('.wcry', es => es.length), 0, '轉盤上方的戰隊卡只放隊名，不放隊呼');
+  const pageText = await page.$eval('body', e => e.innerText);
+  ['序號', 'AUTH_KEY', 'AUTH 0x', 'SEC LEVEL'].forEach(k => {
+    ok(pageText.indexOf(k) < 0, '畫面上不再出現「' + k + '」');
+  });
+
+  /* ── 7b. 重新整理按鈕要看得出來有反應 ── */
+  section('7b. 重新整理按鈕');
+  {
+    await page.click('#tab0');
+    const before = await txt(page, '#reloadBtn');
+    await page.click('#reloadBtn');
+    await page.waitForFunction(() => /已更新 \d\d:\d\d:\d\d/.test(document.getElementById('reloadBtn').textContent),
+      null, { timeout: 15000 });
+    ok(true, '按下去會顯示「已更新 時:分:秒」，不會看起來像死的');
+    await page.waitForFunction(t => document.getElementById('reloadBtn').textContent === t, before, { timeout: 9000 });
+    ok(true, '幾秒後文字自己變回來');
+  }
 
   /* ── 8. 同仁端不輪詢 ── */
   section('8. 同仁端不輪詢（56 支手機一起輪詢會打爆後端）');
@@ -345,9 +382,9 @@ function backend(p) {
   eq(S.rows.length, 2, '兩位隊長各佔一席');
 
   // 三個人：兩個抽完、一個只報到
-  S.rows.push({ name: '甲', dev: 'd1', team: 'RED', status: 'LOCKED', spins: 1, src: 'SELF' });
-  S.rows.push({ name: '乙', dev: 'd2', team: 'WHITE', status: 'LOCKED', spins: 1, src: 'SELF' });
-  S.rows.push({ name: '丙', dev: 'd3', team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF' });
+  S.rows.push({ name: '甲', dev: 'd1', team: 'RED', status: 'LOCKED', spins: 1, src: 'SELF', role: 'ASSAULT' });
+  S.rows.push({ name: '乙', dev: 'd2', team: 'WHITE', status: 'LOCKED', spins: 1, src: 'SELF', role: 'SNIPER' });
+  S.rows.push({ name: '丙', dev: 'd3', team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF', role: '' });
   await page.click('#refreshBtn');
   await page.waitForFunction(() => document.getElementById('sUn').textContent === '1', null, { timeout: 8000 });
   ok((await txt(page, '#statusNote')).includes('沒抽'), '有人報到未抽時控制台會提醒');

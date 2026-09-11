@@ -19,6 +19,7 @@ import http.server, socketserver, json, random, re, socket, sys, threading, urll
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CAP_FLOOR, MAX_PEOPLE, MIN_CLOSE = 6, 56, 12
+ROLE_KEYS = ['ASSAULT', 'CANNON', 'SNIPER']
 ADMIN_PW = 'demo'
 
 LOCK = threading.Lock()          # Apps Script 那邊用 LockService，這裡用 threading.Lock，用意一樣
@@ -55,6 +56,15 @@ def pick(cap, cnt):
     return ('RED' if random.random() < rem_r / (rem_r + rem_w) else 'WHITE'), False
 
 
+def pick_role(rows, team):
+    n = {k: 0 for k in ROLE_KEYS}
+    for r in rows:
+        if r['team'] == team and r['status'] == 'LOCKED' and r.get('role') in n:
+            n[r['role']] += 1
+    lo = min(n.values())
+    return random.choice([k for k in ROLE_KEYS if n[k] == lo])
+
+
 def find(rows, name):
     return next((r for r in rows if r['name'] == name), None)
 
@@ -65,8 +75,9 @@ def me_of(rows, p):
     if r is None and p.get('dev'):
         r = next((x for x in rows if x['dev'] == p['dev']), None)
     if r is None:
-        return {'name': '', 'team': None, 'status': 'NONE', 'spins': 0}
-    return {'name': r['name'], 'team': r['team'], 'status': r['status'], 'spins': r['spins']}
+        return {'name': '', 'team': None, 'status': 'NONE', 'spins': 0, 'role': ''}
+    return {'name': r['name'], 'team': r['team'], 'status': r['status'], 'spins': r['spins'],
+            'role': r.get('role', '')}
 
 
 def snap(p, extra=None):
@@ -85,8 +96,9 @@ def bad(code, msg, data=None):
     return o
 
 
-def new_person(name, dev, team, status, spins, src):
-    return {'name': name, 'dev': dev or '', 'team': team, 'status': status, 'spins': spins, 'src': src}
+def new_person(name, dev, team, status, spins, src, role=''):
+    return {'name': name, 'dev': dev or '', 'team': team, 'status': status, 'spins': spins,
+            'src': src, 'role': role}
 
 
 def handle(p):
@@ -103,7 +115,8 @@ def handle(p):
             for r in rows:
                 if r['status'] != 'LOCKED':
                     continue
-                (red if r['team'] == 'RED' else white).append(r['name'])
+                (red if r['team'] == 'RED' else white).append(
+                    {'name': r['name'], 'role': r.get('role', '')})
         c = counts(rows)
         return {'ok': True, 'phase': STATE['phase'],
                 'data': {'red': red, 'white': white, 'me': me_of(rows, p), 'count': c,
@@ -140,6 +153,7 @@ def handle(p):
             c = counts(rows)
             team, forced = pick(caps(c['checkedIn'], c['red'], c['white']), c)
             r['team'], r['status'], r['spins'] = team, ('LOCKED' if second else 'PENDING'), (2 if second else 1)
+            r['role'] = pick_role(rows, team) if second else ''
             return snap(p, {'forced': forced})
 
         if action == 'confirm':
@@ -151,6 +165,8 @@ def handle(p):
             if r['status'] != 'PENDING':
                 return bad('NOT_PENDING', '還沒抽過')
             r['status'] = 'LOCKED'
+            if not r.get('role'):
+                r['role'] = pick_role(rows, r['team'])
             return snap(p)
 
         if action == 'admin':
@@ -161,7 +177,7 @@ def handle(p):
             if cmd == 'stats':
                 return {'ok': True, 'phase': STATE['phase'], 'data': {
                     'rows': [{'name': r['name'], 'team': r['team'], 'status': r['status'],
-                              'spins': r['spins'], 'src': r['src']} for r in rows],
+                              'spins': r['spins'], 'src': r['src'], 'role': r.get('role', '')} for r in rows],
                     'count': c, 'cap': caps(c['checkedIn'], c['red'], c['white']),
                     'leaders': {'red': '', 'white': ''}, 'gate': {'openAt': '', 'openMin': ''}}}
             if cmd == 'setLeaders':
@@ -171,8 +187,8 @@ def handle(p):
                 if rn == wn:
                     return bad('BAD_NAME', '兩位隊長不能是同一個人')
                 STATE['rows'] = [r for r in rows if r['src'] != 'LEADER' and r['name'] not in (rn, wn)]
-                STATE['rows'].insert(0, new_person(wn, '', 'WHITE', 'LOCKED', 0, 'LEADER'))
-                STATE['rows'].insert(0, new_person(rn, '', 'RED', 'LOCKED', 0, 'LEADER'))
+                STATE['rows'].insert(0, new_person(wn, '', 'WHITE', 'LOCKED', 0, 'LEADER', 'LEADER'))
+                STATE['rows'].insert(0, new_person(rn, '', 'RED', 'LOCKED', 0, 'LEADER', 'LEADER'))
                 STATE['phase'] = 'DRAW'
                 return snap({})
             if cmd == 'open':
@@ -187,6 +203,8 @@ def handle(p):
                 for r in rows:
                     if r['status'] == 'PENDING':
                         r['status'] = 'LOCKED'
+                        if not r.get('role'):
+                            r['role'] = pick_role(rows, r['team'])
                 STATE['phase'] = 'CLOSED'
                 return snap({})
             if cmd == 'move':
@@ -196,6 +214,7 @@ def handle(p):
                 if p.get('team') not in ('RED', 'WHITE'):
                     return bad('BAD_TEAM', '隊伍只能是 RED 或 WHITE')
                 r['team'], r['status'] = p['team'], 'LOCKED'
+                r['role'] = 'LEADER' if r['src'] == 'LEADER' else pick_role(rows, p['team'])
                 return snap({})
             if cmd == 'delete':
                 r = find(rows, name)
@@ -211,9 +230,11 @@ def handle(p):
                     if name and r['name'] != name:
                         continue
                     if mode == 'reset':
-                        r['team'], r['status'], r['spins'] = None, 'CHECKED_IN', 0
+                        r['team'], r['status'], r['spins'], r['role'] = None, 'CHECKED_IN', 0, ''
                     else:
                         r['status'] = 'LOCKED'
+                        if not r.get('role'):
+                            r['role'] = pick_role(rows, r['team'])
                     k += 1
                 return snap({}, {'affected': k})
             if cmd == 'clearAll':

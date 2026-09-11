@@ -19,7 +19,7 @@ var ADMIN_PW = 'PASTE_A_PASSWORD_HERE';     // 部署時用 sed 換掉，真的�
 
 var SHEET_R = '名冊';
 var SHEET_E = '事件';
-var HEAD_R  = ['報到時間', '姓名', '裝置編號', '隊伍', '狀態', '抽籤次數', '更新時間', '來源'];
+var HEAD_R  = ['報到時間', '姓名', '裝置編號', '隊伍', '狀態', '抽籤次數', '更新時間', '來源', '角色'];
 var HEAD_E  = ['時間', '姓名', '動作', '結果', '裝置'];
 
 var CAP_FLOOR   = 6;    // 起始名額下限，見 spec §4.1b（開頭幾位才有真隨機可抽）
@@ -30,6 +30,10 @@ var MIN_CLOSE   = 12;   // 報到不到這個數就封盤，起始下限可能�
 // 結果 163 個請求全是 HTTP 200、只有 26 筆真的進去。鎖裡面每少一次試算表往返，
 // 就少握鎖約 0.3–0.5 秒；54 個人排隊就是差 20–30 秒。兩件事要一起做：把鎖握短、把等待拉長。
 var LOCK_WAIT_MS = 120000;
+
+// 三個角色。後端只存代號，顯示名稱在前端 roulette.html 的 CONFIG.ROLES，
+// 這樣要改叫法只要改前端、不必重新部署後端。隊長固定是 LEADER，不佔三個角色的配額。
+var ROLE_KEYS = ['ASSAULT', 'CANNON', 'SNIPER'];
 
 var RNG = null;                                  // 回測可覆寫，正式執行一律 null
 function setRng(f) { RNG = f; }
@@ -113,7 +117,11 @@ function ensure(name, headers) {
   var book = ss();
   var sh = book.getSheetByName(name);
   if (!sh) sh = book.insertSheet(name);
-  if (sh.getLastRow() === 0) { sh.appendRow(headers); sh.setFrozenRows(1); }
+  if (sh.getLastRow() === 0) { sh.appendRow(headers); sh.setFrozenRows(1); return sh; }
+  // 尾端加了新欄位時，把表頭補齊。只動第 1 列，既有資料不碰。
+  if (sh.getLastColumn() < headers.length) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
   return sh;
 }
 function sheetR() { if (!_shR) _shR = ensure(SHEET_R, HEAD_R); return _shR; }
@@ -139,7 +147,8 @@ function readRoster() {
       team:   String(v[i][3] || '') || null,
       status: String(v[i][4] || 'CHECKED_IN'),
       spins:  Number(v[i][5] || 0),
-      src:    String(v[i][7] || 'SELF')
+      src:    String(v[i][7] || 'SELF'),
+      role:   String(v[i][8] || '')
     });
   }
   return out;
@@ -147,11 +156,13 @@ function readRoster() {
 
 function writeRow(r) {
   sheetR().getRange(r.row, 1, 1, HEAD_R.length)
-    .setValues([[r.checkedAt || nowIso(), r.name, r.dev, r.team || '', r.status, r.spins, nowIso(), r.src]]);
+    .setValues([[r.checkedAt || nowIso(), r.name, r.dev, r.team || '', r.status, r.spins, nowIso(),
+                 r.src, r.role || '']]);
 }
 
-function appendPerson(name, dev, team, status, spins, src) {
-  sheetR().appendRow([nowIso(), name, dev || '', team || '', status, spins, nowIso(), src || 'SELF']);
+function appendPerson(name, dev, team, status, spins, src, role) {
+  sheetR().appendRow([nowIso(), name, dev || '', team || '', status, spins, nowIso(),
+                      src || 'SELF', role || '']);
 }
 
 function findByName(rows, name) {
@@ -184,6 +195,23 @@ function caps(checkedIn, red, white) {
   return { red: Math.max(capR, floor, red), white: Math.max(capW, floor, white) };
 }
 
+/**
+ * 在同一隊裡挑一個角色：挑目前人最少的那個，平手就隨機。
+ * 這樣 25 個人會自然落在 9／8／8，不會出現 12 個狙擊手配 2 個突擊手。
+ */
+function pickRole(rows, team) {
+  var n = { ASSAULT: 0, CANNON: 0, SNIPER: 0 };
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r.team !== team || r.status !== 'LOCKED') continue;
+    if (n[r.role] != null) n[r.role]++;
+  }
+  var min = Math.min(n.ASSAULT, n.CANNON, n.SNIPER);
+  var pool = [];
+  for (var k = 0; k < ROLE_KEYS.length; k++) if (n[ROLE_KEYS[k]] === min) pool.push(ROLE_KEYS[k]);
+  return pool[Math.floor(rnd() * pool.length)];
+}
+
 /** 抽一次。forced=true 代表這一席是補位，另一隊已經滿了。 */
 function pickTeam(cap, cnt) {
   var remR = Math.max(0, cap.red - cnt.red);
@@ -200,8 +228,8 @@ function meOf(rows, p) {
   var name = cleanName(p.name);
   var r = name ? findByName(rows, name) : null;
   if (!r && p.dev) for (var i = 0; i < rows.length; i++) if (rows[i].dev === p.dev) { r = rows[i]; break; }
-  if (!r) return { name: '', team: null, status: 'NONE', spins: 0 };
-  return { name: r.name, team: r.team, status: r.status, spins: r.spins };
+  if (!r) return { name: '', team: null, status: 'NONE', spins: 0, role: '' };
+  return { name: r.name, team: r.team, status: r.status, spins: r.spins, role: r.role || '' };
 }
 
 /** ⚠️ 寫完之後一律用手上這份 rows 算回應，不要再 readRoster() 一次——
@@ -225,7 +253,7 @@ function apiCheckin(p) {
     if (rows.length >= MAX_PEOPLE) return err('ROSTER_FULL', '人數已經滿了（上限 ' + MAX_PEOPLE + ' 人）');
     appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
     rows.push({ row: rows.length + 2, name: name, dev: String(p.dev || ''),
-                team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF' });
+                team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF', role: '' });
     logEvent(name, 'CHECKIN', '', p.dev);
     return snapshot(rows, { name: name, dev: p.dev });
   });
@@ -256,7 +284,7 @@ function apiSpin(p) {
       appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
       logEvent(name, 'CHECKIN', '', p.dev);
       me = { row: rows.length + 2, name: name, dev: String(p.dev || ''),
-             team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF' };
+             team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF', role: '' };
       rows.push(me);
     }
     if (me.status === 'LOCKED') return err('ALREADY_LOCKED', '你已經抽完了');
@@ -270,6 +298,7 @@ function apiSpin(p) {
     me.team   = got.team;
     me.status = second ? 'LOCKED' : 'PENDING';
     me.spins  = second ? 2 : 1;
+    me.role   = second ? pickRole(rows, got.team) : '';   // 定案才配角色
     if (!me.dev && p.dev) me.dev = p.dev;
     writeRow(me);
     logEvent(name, 'SPIN', got.team + (second ? '/LOCKED' : '/PENDING'), p.dev);
@@ -288,6 +317,7 @@ function apiConfirm(p) {
     if (me.status === 'LOCKED') return err('ALREADY_LOCKED', '你已經抽完了');
     if (me.status !== 'PENDING') return err('NOT_PENDING', '還沒抽過，沒有東西可以確認');
     me.status = 'LOCKED';
+    if (!me.role) me.role = pickRole(rows, me.team);
     writeRow(me);
     logEvent(name, 'CONFIRM', me.team, p.dev);
     return snapshot(rows, { name: name, dev: p.dev });
@@ -301,8 +331,9 @@ function apiRoster(p) {
   if (getPhase() !== 'CHECKIN') {
     for (var i = 0; i < rows.length; i++) {
       if (rows[i].status !== 'LOCKED') continue;
-      if (rows[i].team === 'RED') red.push(rows[i].name);
-      else if (rows[i].team === 'WHITE') white.push(rows[i].name);
+      var one = { name: rows[i].name, role: rows[i].role || '' };
+      if (rows[i].team === 'RED') red.push(one);
+      else if (rows[i].team === 'WHITE') white.push(one);
     }
   }
   return okRes({ red: red, white: white, me: meOf(rows, p), count: cnt,
@@ -319,7 +350,7 @@ function apiAdmin(p) {
     var rows = readRoster(), cnt = counts(rows), out = [];
     for (var i = 0; i < rows.length; i++) out.push({
       name: rows[i].name, team: rows[i].team, status: rows[i].status,
-      spins: rows[i].spins, src: rows[i].src
+      spins: rows[i].spins, src: rows[i].src, role: rows[i].role || ''
     });
     return okRes({
       rows: out, count: cnt, cap: caps(cnt.checkedIn, cnt.red, cnt.white),
@@ -359,7 +390,11 @@ function apiAdmin(p) {
         return err('TOO_FEW', '報到不到 ' + MIN_CLOSE + ' 人，起始名額下限可能讓兩隊不平均，確認要封嗎', { count: rows.length });
       }
       for (var j = 0; j < rows.length; j++) {
-        if (rows[j].status === 'PENDING') { rows[j].status = 'LOCKED'; writeRow(rows[j]); }
+        if (rows[j].status === 'PENDING') {
+          rows[j].status = 'LOCKED';
+          if (!rows[j].role) rows[j].role = pickRole(rows, rows[j].team);
+          writeRow(rows[j]);
+        }
       }
       setPhase('CLOSED');
       return snapshot(readRoster(), {});
@@ -371,6 +406,7 @@ function apiAdmin(p) {
       var team = String(p.team || '');
       if (team !== 'RED' && team !== 'WHITE') return err('BAD_TEAM', '隊伍只能是 RED 或 WHITE');
       mv.team = team; mv.status = 'LOCKED';
+      mv.role = (mv.src === 'LEADER') ? 'LEADER' : pickRole(rows, team);
       writeRow(mv);
       logEvent(mv.name, 'ADMIN_MOVE', team, '');
       return snapshot(readRoster(), {});
@@ -392,11 +428,22 @@ function apiAdmin(p) {
         var r = rows[k];
         if (r.status !== 'PENDING') continue;
         if (only && r.name !== only) continue;
-        if (mode === 'reset') { r.team = null; r.status = 'CHECKED_IN'; r.spins = 0; }
-        else                  { r.status = 'LOCKED'; }
+        if (mode === 'reset') { r.team = null; r.status = 'CHECKED_IN'; r.spins = 0; r.role = ''; }
+        else                  { r.status = 'LOCKED'; if (!r.role) r.role = pickRole(rows, r.team); }
         writeRow(r); n++;
       }
       return snapshot(readRoster(), {}, { affected: n });
+    }
+
+    if (cmd === 'fixRoles') {           // 加「角色」欄位之前就定案的人，補配一次
+      var n2 = 0;
+      for (var m = 0; m < rows.length; m++) {
+        var rr = rows[m];
+        if (rr.status !== 'LOCKED' || rr.role) continue;
+        rr.role = (rr.src === 'LEADER') ? 'LEADER' : pickRole(rows, rr.team);
+        writeRow(rr); n2++;
+      }
+      return snapshot(rows, {}, { fixed: n2 });
     }
 
     if (cmd === 'clearAll') {
@@ -417,8 +464,9 @@ function apiAdmin(p) {
 function setLeader(rows, team, name) {
   var old = null;
   for (var i = 0; i < rows.length; i++) if (rows[i].team === team && rows[i].src === 'LEADER') old = rows[i];
-  if (old) { old.name = name; old.status = 'LOCKED'; old.spins = 0; writeRow(old); return; }
+  if (old) { old.name = name; old.status = 'LOCKED'; old.spins = 0; old.role = 'LEADER'; writeRow(old); return; }
   var dup = findByName(rows, name);
-  if (dup) { dup.team = team; dup.status = 'LOCKED'; dup.spins = 0; dup.src = 'LEADER'; writeRow(dup); return; }
-  appendPerson(name, '', team, 'LOCKED', 0, 'LEADER');
+  if (dup) { dup.team = team; dup.status = 'LOCKED'; dup.spins = 0; dup.src = 'LEADER';
+             dup.role = 'LEADER'; writeRow(dup); return; }
+  appendPerson(name, '', team, 'LOCKED', 0, 'LEADER', 'LEADER');
 }

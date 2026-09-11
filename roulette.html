@@ -120,7 +120,6 @@ header{position:sticky;top:0;z-index:20;padding-top:env(safe-area-inset-top,0px)
 .wc .k{font-family:var(--f-mono);font-size:.5625rem;letter-spacing:.12em;color:var(--outline)}
 .wc .v{font-family:var(--f-display);font-weight:800;font-size:.8125rem;letter-spacing:.04em}
 .wc.r .v{color:var(--red-pale)} .wc.w .v{color:var(--white-team)}
-.wc .wcry{font-size:.625rem;line-height:1.35;color:var(--on-variant);margin-top:.15rem}
 .vs{flex:0 0 auto;align-self:center;font-family:var(--f-mono);font-size:.5625rem;letter-spacing:.1em;color:var(--cyan);
   border:1px solid var(--cyan);border-radius:.3rem;padding:.28rem .3rem}
 .wheelbox{position:relative;margin:.5rem auto 0;width:min(80vw,310px);aspect-ratio:1}
@@ -138,14 +137,14 @@ header{position:sticky;top:0;z-index:20;padding-top:env(safe-area-inset-top,0px)
   transform:rotate(18deg);animation:sheen 5.5s ease-in-out infinite}
 @keyframes sheen{0%{left:-40%}55%{left:120%}100%{left:120%}}
 .hubwrap{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
-.hub{pointer-events:auto;width:38%;aspect-ratio:1;border-radius:50%;border:2px solid var(--cyan);
+.hub{pointer-events:auto;width:44%;aspect-ratio:1;border-radius:50%;border:2px solid var(--cyan);
   background:radial-gradient(circle at 50% 35%,#2a3550,#0d1322);color:var(--cyan);
   font-family:var(--f-display);font-weight:900;display:grid;place-items:center;cursor:pointer;
-  line-height:1.15;box-shadow:0 0 22px rgba(0,238,252,.35),inset 0 0 18px rgba(0,238,252,.14)}
-.hub em{font-style:normal;font-size:.8125rem;letter-spacing:.06em;display:block}
+  line-height:1.06;box-shadow:0 0 22px rgba(0,238,252,.35),inset 0 0 18px rgba(0,238,252,.14)}
+.hub em{font-style:normal;font-size:clamp(1.15rem,5.6vw,1.6rem);letter-spacing:.04em;display:block}
 .hub:disabled{cursor:default;box-shadow:none;color:var(--outline);border-color:var(--outline)}
 .hub:disabled small{color:var(--outline-2)}
-.hub small{display:block;font-size:.5rem;letter-spacing:.14em;color:var(--on-variant);margin-top:3px}
+.hub small{display:block;font-size:.45rem;letter-spacing:.12em;color:var(--on-variant);margin-top:1px}
 .hub.live{animation:pulse 2.4s ease-in-out infinite}
 @keyframes pulse{0%,100%{box-shadow:0 0 22px rgba(0,238,252,.35),inset 0 0 18px rgba(0,238,252,.14)}
   50%{box-shadow:0 0 34px rgba(0,238,252,.6),inset 0 0 22px rgba(0,238,252,.22)}}
@@ -177,7 +176,7 @@ input[type=text]{flex:1;min-width:0;background:var(--surface-low);color:var(--on
   font-family:var(--f-body)}
 input[type=text]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3px rgba(0,238,252,.15)}
 .idfoot{display:flex;justify-content:space-between;align-items:flex-end;gap:.6rem;margin-top:.6rem}
-#barcode{height:26px;flex:0 0 auto;opacity:.75}
+#barcode{width:118px;height:26px;flex:0 0 auto;opacity:.7}
 .btn{border:none;border-radius:.5rem;padding:.72rem 1.05rem;font-family:var(--f-display);
   font-weight:800;font-size:.875rem;letter-spacing:.06em;cursor:pointer}
 .btn-c{background:var(--cyan);color:#00272b}
@@ -211,10 +210,16 @@ input[type=text]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3p
 .teamcard.RED .cry{color:var(--red-pale)}
 .teamcard.WHITE .cry{color:var(--white-deep)}
 .names{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.7rem}
-.chip{font-size:.8125rem;padding:.34rem .6rem;border-radius:.4rem;background:var(--variant);
-  border:1px solid var(--outline-2);color:var(--on)}
+.chip{font-size:.8125rem;padding:.32rem .58rem;border-radius:.4rem;background:var(--variant);
+  border:1px solid var(--outline-2);color:var(--on);line-height:1.25}
+.chip .rl{display:block;font-family:var(--f-mono);font-size:.625rem;letter-spacing:.06em;
+  color:var(--on-variant);margin-top:1px}
 .chip.lead{border-color:var(--cyan);color:var(--cyan-pale)}
+.chip.lead .rl{color:var(--cyan)}
 .chip.me{outline:2px solid var(--cyan);outline-offset:1px}
+.rolebar{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.5rem}
+.rolebar span{font-family:var(--f-mono);font-size:.625rem;letter-spacing:.06em;
+  padding:.2rem .45rem;border-radius:.3rem;border:1px solid var(--outline-2);color:var(--on-variant)}
 
 /* ── 雷達 ── */
 .radarwrap{position:relative}
@@ -304,11 +309,9 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
 
     <div class="arena">
       <div class="warcodes">
-        <div class="wc r"><div class="k">WAR_CODE :: RED</div><div class="v" data-team="RED"></div>
-          <div class="wcry" data-cry="RED"></div></div>
+        <div class="wc r"><div class="k">WAR_CODE :: RED</div><div class="v" data-team="RED"></div></div>
         <div class="vs">TARGET<br>_VS</div>
-        <div class="wc w"><div class="k">WAR_CODE :: WHT</div><div class="v" data-team="WHITE"></div>
-          <div class="wcry" data-cry="WHITE"></div></div>
+        <div class="wc w"><div class="k">WAR_CODE :: WHT</div><div class="v" data-team="WHITE"></div></div>
       </div>
       <div class="hudrow"><span id="hudTL">GRID 404::E</span><span id="hudTR">FREQ 142.80</span></div>
       <div class="wheelbox">
@@ -321,7 +324,7 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
           <span class="glass"></span>
         </div>
         <div class="hubwrap">
-          <button class="hub" id="spinBtn" disabled><em>陣營<br>選擇</em><small>EXECUTE</small></button>
+          <button class="hub" id="spinBtn" disabled><em>選擇<br>陣營</em><small>EXECUTE</small></button>
         </div>
       </div>
       <div class="hudrow" style="margin-top:.6rem"><span id="hudBL">RED N:0</span><span id="hudBR">LOCK: STANDBY</span></div>
@@ -330,17 +333,13 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
     <div class="idcard brk" id="idcard">
       <div class="idhead">
         <span class="lbl">ESPORTS TACTICAL ID // 戰士通行證</span>
-        <span class="hud">AUTH <b>0x99A</b></span>
       </div>
       <div class="idrow">
         <input type="text" id="nameInput" placeholder="請輸入您的大名" maxlength="20" autocomplete="off">
         <button class="btn btn-c" id="checkinBtn">報到</button>
       </div>
       <div class="idfoot">
-        <div>
-          <div class="hud">SEC <b>LEVEL-3</b> · 序號 <b id="idSerial">—</b></div>
-          <div class="hud" style="margin-top:.2rem">CHARS <b id="charTag">0/20</b></div>
-        </div>
+        <div class="hud">CHARS <b id="charTag">0/20</b></div>
         <svg id="barcode" viewBox="0 0 120 26" preserveAspectRatio="none" aria-hidden="true"></svg>
       </div>
     </div>
@@ -350,7 +349,7 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
       <div class="tname" id="mineName">—</div>
       <div class="cry" id="mineCry">—</div>
       <div class="mono" style="font-size:.75rem;color:var(--on-variant);margin-top:.35rem" id="mineSub">—</div>
-      <div class="hud" style="margin-top:.5rem">STATUS <b>SEALED</b> · 序號 <b id="mineSerial">—</b></div>
+      <div class="hud" style="margin-top:.5rem">STATUS <b>SEALED</b></div>
     </div>
 
     <div class="note" id="note">正在連線⋯</div>
@@ -380,6 +379,7 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
       <div class="teamhead"><h3 data-team="RED"></h3><span class="hud">WAR_CODE <b>RED</b></span></div>
       <div class="cry" data-cry="RED"></div>
       <div class="lbl mono" id="cntR">0 名</div>
+      <div class="rolebar" id="roleR"></div>
       <div class="names" id="listR"></div>
     </div>
 
@@ -387,6 +387,7 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
       <div class="teamhead"><h3 data-team="WHITE"></h3><span class="hud">WAR_CODE <b>WHT</b></span></div>
       <div class="cry" data-cry="WHITE"></div>
       <div class="lbl mono" id="cntW">0 名</div>
+      <div class="rolebar" id="roleW"></div>
       <div class="names" id="listW"></div>
     </div>
 
@@ -406,7 +407,7 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
     <div class="big" id="dlgTeam">—</div>
     <div class="cry" id="dlgCry"></div>
     <div class="note" id="dlgNote" style="margin-top:.7rem"></div>
-    <div class="serial"><span class="hud">序號 <b id="dlgSerial">—</b></span><span class="hud" id="dlgLock">LOCK: <b>STANDBY</b></span></div>
+    <div class="serial"><span class="hud" id="dlgLock">LOCK: <b>STANDBY</b></span></div>
     <div class="acts" id="dlgActs"></div>
   </div>
 </div>
@@ -434,12 +435,21 @@ var TEAM = {
     tag:   '紅隊 · WAR_CODE RED'
   },
   WHITE: {
-    name:  '榆你相遇',
+    name:  '榆你相遇隊',
     short: '榆你',
     cry:   '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
     tag:   '白隊 · WAR_CODE WHT'
   }
 };
+// 角色顯示名稱。後端只存代號，改叫法改這裡就好、不用重新部署後端。
+var ROLES = {
+  ASSAULT: '突擊手',
+  CANNON:  '重炮手',
+  SNIPER:  '狙擊手',
+  LEADER:  '隊長'
+};
+var ROLE_ORDER = ['ASSAULT', 'CANNON', 'SNIPER'];
+
 var CONFIG = {
   subtitle:      'SPLAT-HQ // 2026 員旅 · 獵鷹漆彈',  // 頁首副標
   feedSeconds:   3,      // 跑馬燈每則停留幾秒
@@ -472,7 +482,7 @@ var $ = function (id) { return document.getElementById(id); };
     el.textContent = TEAM[el.getAttribute('data-team')].name;
   });
   document.querySelectorAll('[data-cry]').forEach(function (el) {
-    el.textContent = TEAM[el.getAttribute('data-cry')].cry;
+    el.textContent = '隊呼：' + TEAM[el.getAttribute('data-cry')].cry;
   });
   $('subTitle').textContent = CONFIG.subtitle;
   $('adminLink').setAttribute('href', CONFIG.adminHref);
@@ -480,12 +490,6 @@ var $ = function (id) { return document.getElementById(id); };
 if (myName) $('nameInput').value = myName;
 
 function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; } return h; }
-/* 序號不是編出來的：它是這支裝置編號的雜湊，同一支手機每次看到的都一樣 */
-var SERIAL = '#' + hash(dev).toString(16).toUpperCase().slice(0, 4) + '-HQ';
-$('mineSerial').textContent = SERIAL;
-$('idSerial').textContent = SERIAL;
-$('dlgSerial').textContent = SERIAL;
-
 /* 條碼：用裝置編號當種子，所以每支手機的通行證條碼都不同、而且固定不變 */
 (function () {
   var seed = hash(dev), bars = [], x = 0;
@@ -589,7 +593,7 @@ function render() {
     $('mine').className = 'mine brk ' + me.team;
     $('mineName').textContent = TEAM[me.team].name;
     $('mineCry').textContent = TEAM[me.team].cry;
-    $('mineSub').textContent = me.name + ' · ' + TEAM[me.team].tag + ' · 已定案';
+    $('mineSub').textContent = me.name + ' · ' + (ROLES[me.role] || '角色待定') + ' · ' + TEAM[me.team].tag;
   }
 
   var canSpin = ST.phase === 'DRAW' && !locked;
@@ -600,23 +604,24 @@ function render() {
     say('', known ? '<b>' + me.name + '</b>，你已經報到了。等主持人設定好兩位隊長就能開抽。'
                   : '先輸入你的名字報到。主持人設定好隊長之後就可以抽了。');
   } else if (locked) {
-    say('good', '你是 <b>' + TEAM[me.team].name + '</b>。這個結果已經定案，不會再變了。');
+    say('good', '你是 <b>' + TEAM[me.team].name + '</b> 的 <b>' + (ROLES[me.role] || '角色待定')
+      + '</b>。這個結果已經定案，不會再變了。');
   } else if (ST.phase === 'CLOSED') {
     say('warn', '已經封盤了，這支手機沒有抽到紀錄。請找主持人。');
   } else if (me.status === 'PENDING') {
     say('warn', '你抽到 <b>' + TEAM[me.team].name + '</b>，還沒定案。要留著就按確認，要再抽一次就按重抽。');
   } else if (!known) {
-    say('', '先輸入你的名字報到，再按中間那顆「陣營選擇」。');
+    say('', '先輸入你的名字報到，再按中間那顆「選擇陣營」。');
   } else {
-    say('', '<b>' + me.name + '</b>，可以抽了。按中間那顆「陣營選擇」。<br>你有兩次機會：第一次可以留可以重抽，<b>第二次直接定案</b>。');
+    say('', '<b>' + me.name + '</b>，可以抽了。按中間那顆「選擇陣營」。<br>你有兩次機會：第一次可以留可以重抽，<b>第二次直接定案</b>。');
   }
 }
 
 /* ── COMBAT FEED：真資料，最近定案的人 ── */
 function renderFeed() {
   var all = [];
-  ROSTER.red.forEach(function (n) { all.push({ n: n, t: 'R' }); });
-  ROSTER.white.forEach(function (n) { all.push({ n: n, t: 'W' }); });
+  ROSTER.red.forEach(function (p) { all.push({ n: p.name, r: p.role, t: 'R' }); });
+  ROSTER.white.forEach(function (p) { all.push({ n: p.name, r: p.role, t: 'W' }); });
   if (!all.length) {
     $('feedMove').innerHTML = '<span class="sep">// 還沒有人定案，等第一個轉盤</span>';
     $('feedMove').style.animationDuration = '12s';
@@ -624,8 +629,9 @@ function renderFeed() {
   }
   all.sort(function (a, b) { return hash(b.n) - hash(a.n); });          // 順序固定，不會每次刷新就跳
   var line = all.slice(0, CONFIG.feedItems).map(function (x) {
-    return '<span class="' + x.t + '">[' + (x.t === 'R' ? 'RED' : 'WHITE') + ' SECTOR] 戰士【' + esc(x.n) +
-           '】部署至【' + TEAM[x.t === 'R' ? 'RED' : 'WHITE'].name + '】</span><span class="sep">//</span>';
+    return '<span class="' + x.t + '">[' + (x.t === 'R' ? 'RED' : 'WHITE') + ' SECTOR] ' +
+           esc(ROLES[x.r] || '戰士') + '【' + esc(x.n) + '】部署至【' +
+           TEAM[x.t === 'R' ? 'RED' : 'WHITE'].name + '】</span><span class="sep">//</span>';
   }).join('');
   $('feedMove').innerHTML = line + line;                                // 接兩份才能無縫循環
   // 速度：每則三秒（Eason 2026-09-11 指定）
@@ -704,7 +710,7 @@ $('checkinBtn').onclick = async function () {
   busy(false); this.disabled = false;
   if (!r.ok) { say('bad', r.message || '報到失敗，再試一次。'); return; }
   apply(r);
-  say('good', '<b>' + n + '</b> 報到完成。' + (ST.phase === 'DRAW' ? '可以按中間那顆「陣營選擇」了。' : '等主持人開始。'));
+  say('good', '<b>' + n + '</b> 報到完成。' + (ST.phase === 'DRAW' ? '可以按中間那顆「選擇陣營」了。' : '等主持人開始。'));
 };
 
 $('spinBtn').onclick = async function () {
@@ -730,7 +736,8 @@ $('spinBtn').onclick = async function () {
   apply(r);
   if (second) {
     dialog({ team: team, title: '第二次抽籤 · 直接定案', noteKind: 'good',
-      note: '這是你的第二次，結果已經鎖定，不能再改了。',
+      note: '這是你的第二次，結果已經鎖定，不能再改了。' +
+            (r.data.me.role ? '<br>你的角色是 <b>' + (ROLES[r.data.me.role] || r.data.me.role) + '</b>。' : ''),
       buttons: [{ text: '知道了', cls: 'btn-c', on: function () { closeDialog(); refresh(true); } }] });
   } else {
     showPending(team, forced);
@@ -768,9 +775,9 @@ function drawRadar(red, white) {
     .forEach(function (t) {
       P.push('<text x="' + t[1] + '" y="' + t[2] + '" fill="#495a75" font-size="9" font-family="Share Tech Mono,monospace" text-anchor="' + t[3] + '">' + t[0] + '</text>');
     });
-  function plot(names, color, side) {
-    names.forEach(function (nm) {
-      var h = hash(nm);
+  function plot(list, color, side) {
+    list.forEach(function (p) {
+      var nm = p.name, h = hash(nm);
       var ang = (h % 1000) / 1000 * Math.PI - Math.PI / 2 + (side === 'L' ? Math.PI : 0);
       // ⚠️ 一定要用 >>>（無號位移）。JS 的 >> 是有號的，雜湊值 ≥ 2^31 會變負數，
       //    sqrt(負數) = NaN，那個人的光點就被畫到左上角 (0,0) 去了。
@@ -789,21 +796,29 @@ function drawRadar(red, white) {
   $('linkTag').textContent = ST.phase === 'CLOSED' ? 'SEALED' : 'STABLE';
   $('radarSub').textContent = '一個光點＝一位已定案的戰士 · 共 ' + (red.length + white.length) + ' 人';
 }
-function chips(box, names, leader) {
+function chips(box, list, barBox) {
   box.innerHTML = '';
-  if (!names.length) { box.innerHTML = '<span class="chip" style="opacity:.5">還沒有人</span>'; return; }
-  names.forEach(function (nm, i) {
+  if (!list.length) { box.innerHTML = '<span class="chip" style="opacity:.5">還沒有人</span>'; barBox.innerHTML = ''; return; }
+  list.forEach(function (p) {
+    var isLead = p.role === 'LEADER';
     var el = document.createElement('span');
-    el.className = 'chip' + (i === 0 && leader ? ' lead' : '') + (nm === myName ? ' me' : '');
-    el.textContent = (i === 0 && leader ? '★ ' : '') + nm;
+    el.className = 'chip' + (isLead ? ' lead' : '') + (p.name === myName ? ' me' : '');
+    el.innerHTML = esc((isLead ? '★ ' : '') + p.name) +
+                   '<span class="rl">' + esc(ROLES[p.role] || '待定') + '</span>';
     box.appendChild(el);
   });
+  // 各角色幾個人
+  var n = {};
+  list.forEach(function (p) { if (p.role && p.role !== 'LEADER') n[p.role] = (n[p.role] || 0) + 1; });
+  barBox.innerHTML = ROLE_ORDER.map(function (k) {
+    return '<span>' + ROLES[k] + ' ' + (n[k] || 0) + '</span>';
+  }).join('');
 }
 function paintReport() {
   $('cntR').textContent = ROSTER.red.length + ' 名';
   $('cntW').textContent = ROSTER.white.length + ' 名';
-  chips($('listR'), ROSTER.red, true);
-  chips($('listW'), ROSTER.white, true);
+  chips($('listR'), ROSTER.red, $('roleR'));
+  chips($('listW'), ROSTER.white, $('roleW'));
   drawRadar(ROSTER.red, ROSTER.white);
 }
 
@@ -817,8 +832,25 @@ function tab(i) {
 }
 $('tab0').onclick = function () { tab(0); };
 $('tab1').onclick = function () { tab(1); };
-$('reloadBtn').onclick = function () { refresh(); };
-$('reloadBtn2').onclick = function () { refresh(); };
+/* 按下去如果畫面沒任何變化，使用者會以為按鈕壞了（資料其實有回來）。
+   所以按鈕自己要顯示「更新中」與「已更新 時:分:秒」。 */
+async function reloadWith(btn) {
+  if (btn.disabled) return;
+  var original = btn.dataset.label || btn.textContent;
+  btn.dataset.label = original;
+  btn.disabled = true;
+  btn.textContent = '更新中⋯';
+  var r = await refresh();
+  var t = new Date();
+  function p(n) { return (n < 10 ? '0' : '') + n; }
+  btn.textContent = (r && r.ok ? '已更新 ' : '更新失敗 ')
+    + p(t.getHours()) + ':' + p(t.getMinutes()) + ':' + p(t.getSeconds());
+  btn.disabled = false;
+  clearTimeout(btn._t);
+  btn._t = setTimeout(function () { btn.textContent = original; }, 4000);
+}
+$('reloadBtn').onclick = function () { reloadWith(this); };
+$('reloadBtn2').onclick = function () { reloadWith(this); };
 
 /* ── 起手 ── */
 if (!API_READY) {
