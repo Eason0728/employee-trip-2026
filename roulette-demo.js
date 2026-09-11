@@ -132,7 +132,7 @@
       if (cmd === 'open') { s.phase = 'DRAW'; save(s); return snap(s, {}); }
       if (cmd === 'close') {
         var un = s.rows.filter(function (x) { return x.status === 'CHECKED_IN'; }).map(function (x) { return x.name; });
-        if (un.length) return bad(s, 'UNSPUN', '還有人報到了沒抽，先刪掉或代抽', { names: un });
+        if (un.length) return bad(s, 'UNSPUN', '還有人報到了沒抽，先讓他抽完或把他刪掉', { names: un });
         if (s.rows.length < MIN_CLOSE && String(p.force || '') !== '1')
           return bad(s, 'TOO_FEW', '報到不到 12 人，確認要封嗎', { count: s.rows.length });
         s.rows.forEach(function (x) { if (x.status === 'PENDING') x.status = 'LOCKED'; });
@@ -147,16 +147,6 @@
         var idx = s.rows.findIndex(function (x) { return x.name === n; });
         if (idx < 0) return bad(s, 'NO_SUCH_NAME', '找不到這個名字');
         s.rows.splice(idx, 1); save(s); return snap(s, {});
-      }
-      if (cmd === 'proxySpin') {
-        if (!n) return bad(s, 'BAD_NAME', '請輸入姓名');
-        var px = find(s.rows, n);
-        if (px && px.status === 'LOCKED') return bad(s, 'ALREADY_LOCKED', '這個人已經抽完了');
-        if (!px) { px = { name: n, dev: '', team: null, status: 'CHECKED_IN', spins: 0, src: 'ADMIN' }; s.rows.push(px); }
-        if (px.status === 'PENDING') px.team = null;
-        var c4 = counts(s.rows), g4 = pick(caps(c4.checkedIn, c4.red, c4.white), c4);
-        px.team = g4.team; px.status = 'LOCKED'; px.spins++; px.src = 'ADMIN';
-        save(s); return snap(s, { name: n }, { forced: g4.forced });
       }
       if (cmd === 'resolvePending') {
         var mode = String(p.mode || 'lock'), k = 0;

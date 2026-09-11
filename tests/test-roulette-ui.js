@@ -131,12 +131,6 @@ function backend(p) {
     }
     if (p.cmd === 'move') { const r = find(S.rows, n); r.team = p.team; r.status = 'LOCKED'; return snap({}); }
     if (p.cmd === 'delete') { S.rows = S.rows.filter(x => x.name !== n); return snap({}); }
-    if (p.cmd === 'proxySpin') {
-      let r = find(S.rows, n);
-      if (!r) { r = { name: n, dev: '', team: null, status: 'CHECKED_IN', spins: 0, src: 'ADMIN' }; S.rows.push(r); }
-      const c2 = counts(S.rows), g = pick(caps(c2.checkedIn, c2.red, c2.white), c2);
-      r.team = g.team; r.status = 'LOCKED'; r.spins++; r.src = 'ADMIN'; return snap({ name: n }, { forced: g.forced });
-    }
     if (p.cmd === 'resolvePending') {
       let k = 0;
       S.rows.forEach(x => { if (x.status !== 'PENDING') return;
@@ -363,10 +357,12 @@ function backend(p) {
   ok((await txt(page, '#statusNote')).includes('丙'), '封盤被擋，而且列出是誰');
   eq(S.phase, 'DRAW', '封盤真的沒有生效');
 
-  await page.fill('#proxyName', '丙');
-  await page.click('#proxyBtn');
+  // 代抽已移除（Eason 2026-09-11 指定）——報到了沒抽的人改成直接刪掉
+  eq(await page.$eval('#panel', e => e.querySelector('#proxyBtn') === null), true, '控制台沒有代抽按鈕');
+  page.once('dialog', d => d.accept());
+  await page.click('[data-del="丙"]');
   await page.waitForFunction(() => document.getElementById('sUn').textContent === '0', null, { timeout: 8000 });
-  eq(S.rows.find(r => r.name === '丙').status, 'LOCKED', '代抽直接定案');
+  eq(S.rows.find(r => r.name === '丙'), undefined, '刪掉之後就不擋封盤了');
 
   await page.click('#closeBtn');
   await page.waitForFunction(() => document.getElementById('closeBtn').textContent.includes('再按一次'), null, { timeout: 8000 });
@@ -423,6 +419,10 @@ function backend(p) {
        f + '：用「像不像一個網址」判斷後端設定好了沒，不跟佔位符比對');
   });
   const cli = fs.readFileSync(path.join(root, 'roulette.html'), 'utf8');
+  // 隊名隊呼只能在最上面那個 TEAM 區塊寫一次——手機上要改才只改一個地方
+  const body = cli.slice(cli.indexOf('以下不用改'));
+  eq((body.match(/豪火戰隊/g) || []).length, 0, '隊名沒有散落在 TEAM 區塊以外');
+  eq((body.match(/火力全開/g) || []).length, 0, '隊呼沒有散落在 TEAM 區塊以外');
   ok(cli.indexOf('60000') > -1, 'roulette.html 逾時是 60 秒');
   ok(cli.indexOf('不用重按') > -1, '超過 8 秒有「不用重按」的安撫文字');
   ok(!/[一-龥]{2,4}(隊長)?\s*[:=]\s*['"][一-龥]{2,4}['"]/.test(cli.replace(/RED:|WHITE:/g, '')),

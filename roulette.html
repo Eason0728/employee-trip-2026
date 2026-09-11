@@ -261,7 +261,7 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
     <!-- 左上角標題就是主持人控制台的入口（控制台自己要通行碼） -->
     <a id="adminLink" href="roulette-admin.html">
       <h1>分隊轉盤</h1>
-      <div class="sub">SPLAT-HQ // 2026 員旅 · 獵鷹漆彈</div>
+      <div class="sub" id="subTitle"></div>
     </a>
     <div class="lbl" style="text-align:right;white-space:nowrap">
       <span class="dot"></span><span id="phaseTag">連線中</span>
@@ -278,9 +278,9 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
   <section id="view-wheel">
     <div class="card brk" style="margin-top:1rem">
       <div class="tele">
-        <span style="color:var(--red-pale)" id="teleR">豪火 0</span>
+        <span style="color:var(--red-pale)" id="teleR">—</span>
         <span class="bar"><i class="r" id="barR" style="width:50%"></i><i class="w" id="barW" style="width:50%"></i></span>
-        <span style="color:var(--white-team)" id="teleW">0 榆你</span>
+        <span style="color:var(--white-team)" id="teleW">—</span>
       </div>
       <div class="telegrid">
         <span class="hud" id="secA">SEC-A <b>50%</b></span>
@@ -292,11 +292,11 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
 
     <div class="arena">
       <div class="warcodes">
-        <div class="wc r"><div class="k">WAR_CODE :: RED</div><div class="v">豪火戰隊</div>
-          <div class="wcry">火力全開——豪！不！留！情！</div></div>
+        <div class="wc r"><div class="k">WAR_CODE :: RED</div><div class="v" data-team="RED"></div>
+          <div class="wcry" data-cry="RED"></div></div>
         <div class="vs">TARGET<br>_VS</div>
-        <div class="wc w"><div class="k">WAR_CODE :: WHT</div><div class="v">榆你相遇</div>
-          <div class="wcry">從從容容、游刃有餘；<br>匆匆忙忙、連滾帶爬</div></div>
+        <div class="wc w"><div class="k">WAR_CODE :: WHT</div><div class="v" data-team="WHITE"></div>
+          <div class="wcry" data-cry="WHITE"></div></div>
       </div>
       <div class="hudrow"><span id="hudTL">GRID 404::E</span><span id="hudTR">FREQ 142.80</span></div>
       <div class="wheelbox">
@@ -304,8 +304,8 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
         <svg class="ticks" viewBox="0 0 100 100" aria-hidden="true" id="ticks"></svg>
         <div class="needle" id="needle"><span class="ptr"></span></div>
         <div class="wheel" id="wheel">
-          <span class="seg w">榆你相遇</span>
-          <span class="seg r">豪火戰隊</span>
+          <span class="seg w" data-team="WHITE"></span>
+          <span class="seg r" data-team="RED"></span>
           <span class="glass"></span>
         </div>
         <div class="hubwrap">
@@ -365,15 +365,15 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
     </div>
 
     <div class="card brk teamcard RED">
-      <div class="teamhead"><h3>豪火戰隊</h3><span class="hud">WAR_CODE <b>RED</b></span></div>
-      <div class="cry">火力全開——豪！不！留！情！</div>
+      <div class="teamhead"><h3 data-team="RED"></h3><span class="hud">WAR_CODE <b>RED</b></span></div>
+      <div class="cry" data-cry="RED"></div>
       <div class="lbl mono" id="cntR">0 名</div>
       <div class="names" id="listR"></div>
     </div>
 
     <div class="card brk teamcard WHITE">
-      <div class="teamhead"><h3>榆你相遇</h3><span class="hud">WAR_CODE <b>WHT</b></span></div>
-      <div class="cry">從從容容、游刃有餘；匆匆忙忙、連滾帶爬</div>
+      <div class="teamhead"><h3 data-team="WHITE"></h3><span class="hud">WAR_CODE <b>WHT</b></span></div>
+      <div class="cry" data-cry="WHITE"></div>
       <div class="lbl mono" id="cntW">0 名</div>
       <div class="names" id="listW"></div>
     </div>
@@ -410,12 +410,32 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
 var API = window.ROULETTE_API || 'https://script.google.com/macros/s/AKfycbwvQYMH5X_VYWzMh1H1D3JvdTqHVfG0rYnfyO2T061YOiirYkrWKoHD82K43FNvGxAsEw/exec';
 var API_READY = /^(https?:\/\/|\/)/.test(API);   // 佔位符不是網址，所以會是 false
 
+/* ═══════════════════════════════════════════════════════════
+   要改東西改這裡就好。改完 commit 推上去，約 20 秒後線上生效。
+   隊名、隊呼會自動套到轉盤、結果視窗、名冊、跑馬燈每一個地方。
+   ═══════════════════════════════════════════════════════════ */
 var TEAM = {
-  RED:   { name: '豪火戰隊', tag: '紅隊 · WAR_CODE RED',
-           cry: '火力全開——豪！不！留！情！' },
-  WHITE: { name: '榆你相遇', tag: '白隊 · WAR_CODE WHT',
-           cry: '從從容容、游刃有餘；匆匆忙忙、連滾帶爬' }
+  RED: {
+    name:  '豪火戰隊',
+    short: '豪火',                                   // 頁首戰況條用的簡稱
+    cry:   '火力全開——豪！不！留！情！',
+    tag:   '紅隊 · WAR_CODE RED'
+  },
+  WHITE: {
+    name:  '榆你相遇',
+    short: '榆你',
+    cry:   '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
+    tag:   '白隊 · WAR_CODE WHT'
+  }
 };
+var CONFIG = {
+  subtitle:      'SPLAT-HQ // 2026 員旅 · 獵鷹漆彈',  // 頁首副標
+  feedSeconds:   3,      // 跑馬燈每則停留幾秒
+  feedItems:     14,     // 跑馬燈最多帶幾則
+  spinSeconds:   4,      // 轉盤要轉幾秒（也要同步改 CSS 的 .needle transition）
+  adminHref:     'roulette-admin.html'               // 左上角標題連到哪（主持人入口）
+};
+/* ═══════════════════ 以下不用改 ═══════════════════ */
 var DEV_KEY = 'tripRoulette2026Dev', NAME_KEY = 'tripRoulette2026Name';
 
 function ls(k, v) {
@@ -431,6 +451,18 @@ if (!dev || dev.length !== 16) {
 var myName = ls(NAME_KEY) || '';
 
 var $ = function (id) { return document.getElementById(id); };
+
+/* 把 TEAM／CONFIG 套進畫面——隊名隊呼只在上面那個區塊寫一次 */
+(function () {
+  document.querySelectorAll('[data-team]').forEach(function (el) {
+    el.textContent = TEAM[el.getAttribute('data-team')].name;
+  });
+  document.querySelectorAll('[data-cry]').forEach(function (el) {
+    el.textContent = TEAM[el.getAttribute('data-cry')].cry;
+  });
+  $('subTitle').textContent = CONFIG.subtitle;
+  $('adminLink').setAttribute('href', CONFIG.adminHref);
+})();
 if (myName) $('nameInput').value = myName;
 
 function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; } return h; }
@@ -521,8 +553,8 @@ function render() {
   var me = ST.me, c = ST.count;
   $('phaseTag').textContent = PHASE_TXT[ST.phase] || ST.phase;
   $('capTag').innerHTML = '報到 <b>' + c.checkedIn + '</b> · 名額 <b>' + ST.cap.red + '/' + ST.cap.white + '</b>';
-  $('teleR').textContent = '豪火 ' + c.red;
-  $('teleW').textContent = c.white + ' 榆你';
+  $('teleR').textContent = TEAM.RED.short + ' ' + c.red;
+  $('teleW').textContent = c.white + ' ' + TEAM.WHITE.short;
   var tot = Math.max(1, c.red + c.white);
   var pr = Math.round(c.red / tot * 100);
   $('barR').style.width = pr + '%';
@@ -577,13 +609,13 @@ function renderFeed() {
     return;
   }
   all.sort(function (a, b) { return hash(b.n) - hash(a.n); });          // 順序固定，不會每次刷新就跳
-  var line = all.slice(0, 14).map(function (x) {
+  var line = all.slice(0, CONFIG.feedItems).map(function (x) {
     return '<span class="' + x.t + '">[' + (x.t === 'R' ? 'RED' : 'WHITE') + ' SECTOR] 戰士【' + esc(x.n) +
            '】部署至【' + TEAM[x.t === 'R' ? 'RED' : 'WHITE'].name + '】</span><span class="sep">//</span>';
   }).join('');
   $('feedMove').innerHTML = line + line;                                // 接兩份才能無縫循環
   // 速度：每則三秒（Eason 2026-09-11 指定）
-  $('feedMove').style.animationDuration = (all.slice(0, 14).length * 3) + 's';
+  $('feedMove').style.animationDuration = (all.slice(0, CONFIG.feedItems).length * CONFIG.feedSeconds) + 's';
 }
 function esc(s) { return String(s).replace(/[&<>"']/g, function (c) {
   return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -598,7 +630,7 @@ function spinTo(team) {
     var jitter = Math.floor(Math.random() * 110) - 55;
     turns += 5;
     $('needle').style.transform = 'rotate(' + (turns * 360 + base + jitter) + 'deg)';
-    setTimeout(resolve, 4100);
+    setTimeout(resolve, CONFIG.spinSeconds * 1000 + 100);
   });
 }
 

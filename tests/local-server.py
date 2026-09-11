@@ -181,7 +181,7 @@ def handle(p):
             if cmd == 'close':
                 un = [r['name'] for r in rows if r['status'] == 'CHECKED_IN']
                 if un:
-                    return bad('UNSPUN', '還有人報到了沒抽，先刪掉或代抽', {'names': un})
+                    return bad('UNSPUN', '還有人報到了沒抽，先讓他抽完或把他刪掉', {'names': un})
                 if len(rows) < MIN_CLOSE and p.get('force') != '1':
                     return bad('TOO_FEW', f'報到不到 {MIN_CLOSE} 人，確認要封嗎', {'count': len(rows)})
                 for r in rows:
@@ -203,22 +203,6 @@ def handle(p):
                     return bad('NO_SUCH_NAME', '找不到這個名字')
                 rows.remove(r)
                 return snap({})
-            if cmd == 'proxySpin':
-                if not name:
-                    return bad('BAD_NAME', '請輸入姓名')
-                r = find(rows, name)
-                if r and r['status'] == 'LOCKED':
-                    return bad('ALREADY_LOCKED', '這個人已經抽完了')
-                if r is None:
-                    r = new_person(name, '', None, 'CHECKED_IN', 0, 'ADMIN')
-                    rows.append(r)
-                if r['status'] == 'PENDING':
-                    r['team'] = None
-                c2 = counts(rows)
-                team, forced = pick(caps(c2['checkedIn'], c2['red'], c2['white']), c2)
-                r['team'], r['status'], r['src'] = team, 'LOCKED', 'ADMIN'
-                r['spins'] += 1
-                return snap({'name': name}, {'forced': forced})
             if cmd == 'resolvePending':
                 mode, k = p.get('mode', 'lock'), 0
                 for r in rows:

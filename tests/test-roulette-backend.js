@@ -395,9 +395,7 @@ section('10. 主持人指令');
   eq(r.ok, true, '主持人把人換隊');
   eq(B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.team, other, '換隊生效');
 
-  r = A({ cmd: 'proxySpin', name: '代抽的人' });
-  eq(r.ok, true, '代抽');
-  eq(B.route({ action: 'state', name: '代抽的人', dev: dev(5) }).data.me.status, 'LOCKED', '代抽直接鎖死');
+  eq(A({ cmd: 'proxySpin', name: '任何人' }).error, 'BAD_ACTION', '代抽功能已移除（Eason 2026-09-11 指定）');
 
   r = A({ cmd: 'resolvePending', mode: 'reset' });
   eq(r.ok, true, '把暫定的人退回未抽');

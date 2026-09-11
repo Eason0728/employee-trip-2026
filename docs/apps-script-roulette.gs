@@ -354,7 +354,7 @@ function apiAdmin(p) {
     if (cmd === 'close') {
       var unspun = [];
       for (var i = 0; i < rows.length; i++) if (rows[i].status === 'CHECKED_IN') unspun.push(rows[i].name);
-      if (unspun.length) return err('UNSPUN', '還有人報到了沒抽，先刪掉或代抽', { names: unspun });
+      if (unspun.length) return err('UNSPUN', '還有人報到了沒抽，先讓他抽完或把他刪掉', { names: unspun });
       if (rows.length < MIN_CLOSE && String(p.force || '') !== '1') {
         return err('TOO_FEW', '報到不到 ' + MIN_CLOSE + ' 人，起始名額下限可能讓兩隊不平均，確認要封嗎', { count: rows.length });
       }
@@ -382,26 +382,6 @@ function apiAdmin(p) {
       sheetR().deleteRow(dl.row);
       logEvent(dl.name, 'ADMIN_DELETE', dl.team || '', '');
       return snapshot(readRoster(), {});
-    }
-
-    if (cmd === 'proxySpin') {
-      var pn = cleanName(p.name);
-      if (!pn) return err('BAD_NAME', '請輸入姓名');
-      var px = findByName(rows, pn);
-      if (px && px.status === 'LOCKED') return err('ALREADY_LOCKED', '這個人已經抽完了');
-      if (!px) {
-        if (rows.length >= MAX_PEOPLE) return err('ROSTER_FULL', '人數已經滿了');
-        appendPerson(pn, '', '', 'CHECKED_IN', 0, 'ADMIN');
-        rows = readRoster();
-        px = findByName(rows, pn);
-      }
-      if (px.status === 'PENDING') px.team = null;
-      var c2 = counts(rows);
-      var g2 = pickTeam(caps(c2.checkedIn, c2.red, c2.white), c2);
-      px.team = g2.team; px.status = 'LOCKED'; px.spins = px.spins + 1; px.src = 'ADMIN';
-      writeRow(px);
-      logEvent(pn, 'ADMIN_PROXY', g2.team, '');
-      return snapshot(readRoster(), { name: pn }, { forced: g2.forced });
     }
 
     if (cmd === 'resolvePending') {

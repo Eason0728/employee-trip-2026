@@ -133,14 +133,11 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
     <section class="card">
       <div class="lbl">現場例外</div>
       <div class="row">
-        <input type="text" id="proxyName" placeholder="代抽：輸入姓名" maxlength="20">
-        <button class="btn btn-c" id="proxyBtn" style="flex:0 0 auto">代抽</button>
-      </div>
-      <div class="row">
         <button class="btn btn-g" id="pendLockBtn">把暫定的人直接鎖定</button>
         <button class="btn btn-g" id="pendResetBtn">把暫定的人退回未抽</button>
       </div>
-      <div class="note">有人抽完第一次就關掉網頁、手機沒電，會一直佔著名額。用這兩顆收掉。</div>
+      <div class="note">有人抽完第一次就關掉網頁、手機沒電，會一直佔著名額。用這兩顆收掉。<br>
+      <b>報到了卻沒抽的人會擋住封盤</b>，在下面名冊把他刪掉就好。</div>
     </section>
 
     <!-- 名冊 -->
@@ -211,7 +208,7 @@ function paint(d, phase) {
 
   var diff = Math.abs(d.count.red - d.count.white);
   if (d.count.pendingUnspun > 0)
-    say('warn', '還有 <b>' + d.count.pendingUnspun + ' 人</b>報到了沒抽。封盤前要先讓他們抽完、代抽、或刪掉，'
+    say('warn', '還有 <b>' + d.count.pendingUnspun + ' 人</b>報到了沒抽。封盤前要先讓他們抽完，或在下面名冊把人刪掉，'
       + '不然兩隊人數會差掉。' + (diff ? '目前 ' + d.count.red + ' 對 ' + d.count.white + '。' : ''));
   else if (diff > 1)
     say('bad', '目前 <b>' + d.count.red + ' 對 ' + d.count.white + '</b>，差了 ' + diff + ' 人——通常是手動換隊造成的。');
@@ -285,7 +282,7 @@ $('closeBtn').onclick = async function () {
   if (r.ok) { closeArmed = false; this.textContent = '封盤（不再開放抽籤）'; load(); return; }
   if (r.error === 'UNSPUN') {
     say('bad', '封不了：還有這些人報到了沒抽 → <b>' + (r.data.names || []).map(esc).join('、')
-      + '</b><br>先代抽或刪掉他們。');
+      + '</b><br>在下面名冊把他們刪掉，或請他們抽完。');
     return;
   }
   if (r.error === 'TOO_FEW') {
@@ -299,15 +296,6 @@ $('closeBtn').onclick = async function () {
   say('bad', r.message);
 };
 
-$('proxyBtn').onclick = async function () {
-  var nm = $('proxyName').value.trim();
-  if (!nm) { say('bad', '請輸入要代抽的人的姓名。'); return; }
-  var r = await admin('proxySpin', { name: nm });
-  if (!r.ok) { say('bad', r.message); return; }
-  $('proxyName').value = '';
-  say('good', nm + ' → <b>' + TEAM[r.data.me.team] + '</b>（代抽，直接定案）');
-  load();
-};
 $('pendLockBtn').onclick = async function () {
   var r = await admin('resolvePending', { mode: 'lock' });
   r.ok ? (say('good', '鎖定了 ' + r.data.affected + ' 位暫定中的人。'), load()) : say('bad', r.message);
