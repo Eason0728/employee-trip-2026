@@ -176,7 +176,8 @@ tr.muted td:not(.ctl){opacity:.5}
     <p class="hint noprint" style="margin-top:10px">
       叫人上台照這個順序。每人報兩首以上是怕現場點不到歌，唱哪首由參賽者自己決定。<br>
       <b>暫停</b>：那一位還留在同仁的名單上，但變灰色、送不出分數；按<b>開放</b>就回來，已經收到的分數不動。<br>
-      <b>刪除</b>：報名那一列真的刪掉，他的分數就不列入名次了。沒有復原，編號也不會再發給別人。
+      <b>刪除</b>：報名那一列真的刪掉，<b>後面的人自動往前遞補、序號保持連貫</b>（1、2、3…沒有缺號）。
+      已經收到的票會跟著換號，不會算到別人頭上。沒有復原。
     </p>
   </section>
 
@@ -202,7 +203,8 @@ tr.muted td:not(.ctl){opacity:.5}
       <button class="danger" id="reset">清空報名與分數</button>
     </div>
     <p class="hint" style="margin-top:12px">
-      <b>只清分數</b>：報名名單一個都不動，分數重來。打錯分數要重評時用。<br>
+      <b>只清分數</b>：報名名單一個都不動，分數重來。打錯分數要重評時用。
+      同仁的手機會自動忘掉「我評過誰」，才重評得了。<br>
       <b>清空全部</b>：報名和分數全沒了，沒有復原。成績要留就先截圖或列印這一頁。
     </p>
   </section>
@@ -471,8 +473,8 @@ document.getElementById('list').addEventListener('click', function (e) {
 
   if (cmd === 'removeOne') {
     if (!confirm('刪掉 ' + no + ' 號 ' + b.dataset.name + '？\n'
-               + '報名那一列會真的刪掉，他收到的分數也不再列入名次。\n'
-               + '沒有復原，這個編號之後也不會再發給別人。')) return;
+               + '後面的人會往前遞補，序號重新排成 1、2、3…（他們的分數跟著換號，不會算錯）。\n'
+               + '沒有復原。')) return;
     admin({ cmd: cmd, no: no }, function (res) {
       if (res && res.ok && res.removed) {
         say('已刪掉 ' + res.removed.no + ' 號 ' + res.removed.name + '。');

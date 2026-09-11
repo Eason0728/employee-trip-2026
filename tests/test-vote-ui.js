@@ -30,7 +30,7 @@ function eq(a, b, name) { check(name, a === b, `得到 ${JSON.stringify(a)}，�
 
 /* ══════════ 假後端：形狀照 apps-script-vote.gs ══════════ */
 function makeServer() {
-  const db = { signups: [], votes: [], round: 1, finalists: [], muted: [],
+  const db = { signups: [], votes: [], round: 1, finalists: [], muted: [], epoch: 0,
                set: { signupOpen: true, voteOpen: false, published: false } };
   const CRIT = ['唱功', '感情', '炒熱度'];
 
@@ -76,7 +76,8 @@ function makeServer() {
     handle(p) {
       switch (p.action) {
         case 'state':
-          return { ok: true, ...db.set, criteria: CRIT, minSongs: 2, count: db.signups.length };
+          return { ok: true, ...db.set, criteria: CRIT, minSongs: 2,
+                   count: db.signups.length, epoch: db.epoch };
         case 'signup': {
           if (!db.set.signupOpen) return { ok: false, err: 'signupClosed' };
           const name = String(p.name || '').trim();
@@ -89,7 +90,7 @@ function makeServer() {
           return { ok: true, no, name, songs };
         }
         case 'list':
-          return { ok: true, list: listOut() };
+          return { ok: true, list: listOut(), epoch: db.epoch };
         case 'vote': {
           if (!db.set.voteOpen) return { ok: false, err: 'voteClosed' };
           const no = Number(p.no);
@@ -128,6 +129,7 @@ function makeServer() {
           if (c === 'clearVotes') {
             db.votes = db.votes.filter(v => (v.round || 1) !== db.round);
             db.set.published = false;
+            db.epoch += 1;
           }
           let removed = null;
           if (c === 'muteOne' || c === 'unmuteOne') {
@@ -142,17 +144,23 @@ function makeServer() {
             const hit = db.signups.find(s => s.no === dno);
             if (!hit) return { ok: false, err: 'badno' };
             removed = { no: dno, name: hit.name };
+            // 刪完重新編號成 1、2、3…，票也一起換號（與 .gs 一致）
+            const map = {};
             db.signups = db.signups.filter(s => s.no !== dno);
-            db.finalists = db.finalists.filter(n => n !== dno);
-            db.muted = db.muted.filter(n => n !== dno);
+            db.signups.forEach((s, i) => { map[s.no] = i + 1; s.no = i + 1; });
+            db.votes.forEach(v => { v.no = map[v.no] || 0; });
+            db.finalists = db.finalists.map(n => map[n] || 0).filter(Boolean);
+            db.muted = db.muted.map(n => map[n] || 0).filter(Boolean);
+            db.epoch += 1;
           }
           if (c === 'reset') {
             db.signups = []; db.votes = []; db.round = 1; db.finalists = []; db.muted = [];
+            db.epoch += 1;
             db.set = { signupOpen: true, voteOpen: false, published: false };
           }
           const r = rank();
           const out = { ok: true,
-            settings: { ...db.set, round: db.round,
+            settings: { ...db.set, round: db.round, epoch: db.epoch,
                         finalists: db.finalists.slice(), muted: db.muted.slice() },
             signups: listOut(),
             published: db.set.published, voters: r.voters, rank: r.rank, round: db.round };
@@ -865,6 +873,8 @@ function makeServer() {
     eq((await page.$$('#list tbody tr')).length, 2, '名單少一位');
     eq(await page.textContent('#cnt'), '共 2 位', '人數跟著改');
     check('名單上找不到他了', !(await page.textContent('#list')).includes('乙'));
+    eq(await page.$$eval('#list tbody td.no', ts => ts.map(t => t.textContent).join(',')),
+       '1,2', '⚠ 序號連貫：刪完重新排成 1、2，沒有缺號');
     check('畫面講得出刪掉的是誰', (await msg(page)).includes('乙'));
     check('他的分數不再列入名次', !(await page.textContent('#rank')).includes('乙'));
 
@@ -875,8 +885,7 @@ function makeServer() {
       eq((await p2.$$('.people .person')).length, 2, '同仁端只剩兩位');
       await tab(p2, '報名');
       await fillSignup(p2, '丁', [['歌一', '甲'], ['歌二', '乙']]);
-      eq(await p2.textContent('#myNo'), '4',
-         '⚠ 新報名拿 4 號不是 3 號——編號回收的話兩個人會共用編號，票就混在一起');
+      eq(await p2.textContent('#myNo'), '3', '新報名接在後面拿 3 號，序號接得上');
       await c2.close();
     }
 
@@ -927,6 +936,70 @@ function makeServer() {
     check('回來之後那一列變成暫停中',
       await page.$eval('#list tbody tr:nth-child(1)', e => e.classList.contains('muted')));
     await ctx.close();
+  }
+
+  /* ══════════ 22. 只清分數之後，同仁要重評得了 ══════════ */
+  {
+    // 同仁的手機把「我評過幾號」記在自己的 localStorage。主持人清掉分數之後，
+    // 那些記號沒清的話畫面會一直顯示「已評」、點進去只給看舊分數——整場沒人重評得了。
+    const server = makeServer(), calls = [];
+    server.db.set.voteOpen = true;
+    ['甲', '乙'].forEach((n, i) =>
+      server.db.signups.push({ no: i + 1, dev: 'x' + i, name: n, songs: ['a - b', 'c - d'] }));
+
+    const { ctx, page } = await phone(server, calls, HOST + '/vote.html#vote');
+    await page.waitForTimeout(600);
+    await page.click('.people .person:nth-child(1)');
+    await page.waitForTimeout(200);
+    for (let i = 1; i <= 3; i++) await page.click(`.crit:nth-child(${i}) .scale button:nth-child(4)`);
+    await page.click('#sendVote'); await page.waitForTimeout(500);
+    check('評完之後標成已評',
+      (await page.textContent('.people .person:nth-child(1)')).includes('已評'));
+
+    // 主持人清掉這一輪的分數
+    const { ctx: ac, page: ap } = await phone(server, calls, HOST + '/vote-admin.html');
+    ap.on('dialog', d => d.accept());
+    await ap.fill('#pw', 'testpw'); await ap.click('#enter'); await ap.waitForTimeout(500);
+    await ap.click('#clearVotes'); await ap.waitForTimeout(600);
+    await ac.close();
+
+    await page.click('#pageVote .ghost:has-text("重新整理名單")');
+    await page.waitForTimeout(700);
+    check('⚠ 手機上的「已評」記號要跟著清掉',
+      !(await page.textContent('.people .person:nth-child(1)')).includes('已評'));
+    check('而且有講一聲為什麼', (await msg(page)).includes('編號重新排過'));
+
+    await page.click('.people .person:nth-child(1)');
+    await page.waitForTimeout(300);
+    check('點進去是重評的表單，不是唯讀的舊分數',
+      !(await page.$eval('#voteForm', e => e.hidden)));
+    await ctx.close();
+  }
+
+  /* ══════════ 23. 前面的人被刪掉，自己的編號要跟著往前挪 ══════════ */
+  {
+    const server = makeServer(), calls = [];
+    const { ctx, page } = await phone(server, calls);
+    await fillSignup(page, '甲', [['歌一', '一'], ['歌二', '二']]);
+    const { ctx: c2, page: p2 } = await phone(server, calls);
+    await fillSignup(p2, '乙', [['歌一', '一'], ['歌二', '二']]);
+    eq(await p2.textContent('#myNo'), '2', '乙報名時是 2 號');
+
+    // 主持人把 1 號刪掉
+    const { ctx: ac, page: ap } = await phone(server, calls, HOST + '/vote-admin.html');
+    ap.on('dialog', d => d.accept());
+    await ap.fill('#pw', 'testpw'); await ap.click('#enter'); await ap.waitForTimeout(500);
+    await ap.click('#list tbody tr:nth-child(1) button[data-cmd="removeOne"]');
+    await ap.waitForTimeout(600);
+    eq(await ap.textContent('#cnt'), '共 1 位', '控制台上只剩一位');
+    await ac.close();
+
+    await p2.click('#pageSignup .ghost:has-text("重新整理名單")');
+    await p2.waitForTimeout(700);
+    eq(await p2.textContent('#myNo'), '1',
+       '⚠ 乙的手機上要顯示新編號 1——不改的話他會照舊號上台，叫錯人');
+    check('名字沒被動到', (await p2.textContent('#myName')) === '乙');
+    await c2.close(); await ctx.close();
   }
 
   await browser.close();

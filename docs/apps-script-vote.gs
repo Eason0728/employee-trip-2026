@@ -84,7 +84,8 @@ function getSettings() {
     published : p.getProperty('published')  === '1',   // 成績是否已公佈
     round     : Number(p.getProperty('round') || 1),   // 1＝初賽，2＝決賽
     finalists : finalistList(),                        // 決賽名單（初賽時是空的）
-    muted     : mutedList()                            // 個別關掉評分的編號
+    muted     : mutedList(),                           // 個別關掉評分的編號
+    epoch     : Number(p.getProperty('epoch') || 0)    // 名單重編號／分數清掉的次數
   };
 }
 
@@ -105,6 +106,15 @@ function mutedList() {
     if (Object.prototype.toString.call(a) !== '[object Array]') return [];
     return a.map(Number).filter(function (n) { return n > 0; });
   } catch (e) { return []; }
+}
+
+/**
+ * 名單或分數被動過就 +1。同仁的手機比對這個數字，一變就把自己存的
+ * 「我評過幾號」清掉——編號重編過或分數被清掉之後，那些記號指向的人已經不是同一個了。
+ */
+function bumpEpoch(pr) {
+  pr = pr || props();
+  pr.setProperty('epoch', String(Number(pr.getProperty('epoch') || 0) + 1));
 }
 
 /**
@@ -172,7 +182,7 @@ function apiSignup(p) {
 function apiList() {
   var sh = sheetS();
   var last = sh.getLastRow();
-  if (last < 2) return { ok: true, list: [] };
+  if (last < 2) return { ok: true, list: [], epoch: getSettings().epoch };
   var list = allSignups();
   // 決賽時只回晉級的那幾位——名單留在試算表不動，只是不送出去，
   // 同仁的手機上就只看得到決賽選手，不會誤評已經淘汰的人。
@@ -187,7 +197,8 @@ function apiList() {
   if (mute.length) {
     list.forEach(function (x) { if (mute.indexOf(x.no) >= 0) x.off = true; });
   }
-  return { ok: true, list: list };
+  // epoch 一變，同仁手機上記的「我評過幾號」就不能信了——編號重編過，或分數被清掉。
+  return { ok: true, list: list, epoch: getSettings().epoch };
 }
 
 /** 試算表上的全部報名者，不做任何輪次過濾。查初賽名次時要看得到被淘汰的人。 */
@@ -217,8 +228,10 @@ function signupNos() {
 
 /**
  * 下一個參賽編號＝現有最大的 +1。
- * ⚠ 不可以改回用「列數」算：主持人單獨刪掉一位之後，後面的列會往上遞補，
- *   用列數算就會把已經發出去的編號再發一次——兩個人共用一個編號，票全混在一起。
+ * 刪掉一位之後 removeOne 會把剩下的人重編成 1、2、3…，所以這個值等於「人數 +1」，
+ * 編號永遠連貫、不會有缺號（2026-09-11 Eason 要求：現場叫號要照著念得下去）。
+ * ⚠ 還是用「最大 +1」而不是「列數」：萬一哪天重編號那段出錯留下缺號，
+ *   用列數算會把已經發出去的編號再發一次，兩個人共用一個編號、票全混在一起。
  */
 function nextNo() {
   var max = 0;
@@ -393,6 +406,9 @@ function apiAdmin(p) {
         if (keep.length) shv.getRange(2, 1, keep.length, keep[0].length).setValues(keep);
       }
       pr.setProperty('published', '0');
+      // ⚠ 一定要 bump。同仁的手機上記著自己評過誰，分數清掉之後那些記號還在，
+      //   畫面會顯示「已評」而且點進去只給看舊分數——整場就沒人重評得了。
+      bumpEpoch(pr);
       break;
     }
     case 'muteOne':
@@ -407,9 +423,13 @@ function apiAdmin(p) {
       break;
     }
     case 'removeOne': {
-      // 單獨刪掉一位參賽者：報名那一列真的刪掉，決賽名單與暫停名單也跟著把他拿掉。
-      // **評分紀錄不動**——原始資料留著才查得出當時發生過什麼事；
-      // 計分時 computeRank() 會跳過名單上已經不存在的編號，所以名次不受影響。
+      // 單獨刪掉一位參賽者。報名那一列真的刪掉，**剩下的人重新編成 1、2、3…**
+      // ——序號要連貫，現場叫號才念得下去（2026-09-11 Eason 指示）。
+      //
+      // ⚠ 重編號一定要連「票」一起改。票是掛在參賽編號上的，只改報名那張表的話，
+      //   3 號收到的票會突然變成新 3 號（原本的 4 號）的分數——而且畫面上完全看不出來。
+      //   所以下面三樣東西要在同一個鎖裡一起換：報名的編號、評分紀錄的參賽編號、
+      //   決賽名單與暫停名單。
       var dno = Number(p.no);
       var lk = LockService.getScriptLock();
       try { lk.waitLock(30000); } catch (e) { return { ok: false, err: 'busy' }; }
@@ -425,11 +445,35 @@ function apiAdmin(p) {
         if (at < 0) return { ok: false, err: 'badno' };
         removed = { no: dno, name: String(col[at][1]) };
         shs.deleteRow(at + 2);                                 // +2＝跳過表頭、索引轉列號
+
+        // 舊編號 → 新編號。照列的順序重編，報名的先後（＝上台順序）不會被打亂。
+        var map = {}, fresh = [];
+        for (var k = 0; k < col.length; k++) {
+          if (k === at) continue;
+          map[Number(col[k][0])] = fresh.length + 1;
+          fresh.push([fresh.length + 1]);
+        }
+        if (fresh.length) shs.getRange(2, 3, fresh.length, 1).setValues(fresh);
+
+        // 票跟著改號。被刪掉的那位的票改成 0——0 永遠不會是任何人的編號，
+        // 計分一定跳過；那幾列的時間、裝置、分數都留著，事後查得到。
+        var shv = sheetV();
+        var vr = shv.getLastRow();
+        if (vr > 1) {
+          var vn = shv.getRange(2, 3, vr - 1, 1).getValues().map(function (r) {
+            var o = Number(r[0]);
+            return [map.hasOwnProperty(o) ? map[o] : 0];
+          });
+          shv.getRange(2, 3, vn.length, 1).setValues(vn);
+        }
+
+        // 決賽名單與暫停名單存的也是編號，一起換過去（換不到的＝被刪掉的，saveNos 會濾掉）
+        saveNos('finalists', finalistList().map(function (n) { return map[n] || 0; }));
+        saveNos('muted',     mutedList().map(function (n) { return map[n] || 0; }));
+        bumpEpoch(pr);
       } finally {
         lk.releaseLock();
       }
-      saveNos('finalists', finalistList().filter(function (n) { return n !== dno; }));
-      saveNos('muted',     mutedList().filter(function (n) { return n !== dno; }));
       break;
     }
     case 'reset':
@@ -440,6 +484,7 @@ function apiAdmin(p) {
       pr.deleteProperty('round');
       pr.deleteProperty('finalists');
       pr.deleteProperty('muted');
+      bumpEpoch(pr);          // 不刪 epoch：歸零的話手機上的舊記號不會被清掉
       [SHEET_S, SHEET_V].forEach(function (n) {
         var sh = ss().getSheetByName(n);
         if (sh && sh.getLastRow() > 1) {

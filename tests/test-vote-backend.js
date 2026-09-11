@@ -23,6 +23,9 @@ function eq(a, b, name) { ok(a === b, name, `得到 ${JSON.stringify(a)}，預�
 
 const dev = n => 'dev' + String(n).padStart(9, '0') + 'xxxxxxxx';
 
+/** 從名次／名單裡挑某個編號。查不到回空物件，壞掉時是一條 ✗ 而不是整份測試中斷 */
+const byNo = (rows, n) => (rows || []).filter(x => x.no === n)[0] || {};
+
 /* ══════════ Google API stubs ══════════ */
 function makeSheet() {
   // rows[0] 是表頭——ensure() 建表時自己 appendRow 進來的，所以列號直接對應索引 r1-1
@@ -39,7 +42,13 @@ function makeSheet() {
     getRange: (r1, c1, nR, nC) => ({
       getValues: () => rows.slice(r1 - 1, r1 - 1 + nR).map(r => r.slice(c1 - 1, c1 - 1 + nC)),
       setNumberFormat: () => {},
-      setValues: v => { v.forEach((row, i) => { rows[r1 - 1 + i] = row.slice(); }); },
+      // ⚠ 要照 c1 只蓋指定的欄。原本整列換掉，寫單一欄（重新編號那段）會把整列洗成一格
+      setValues: v => {
+        v.forEach((row, i) => {
+          const tgt = rows[r1 - 1 + i] || (rows[r1 - 1 + i] = []);
+          row.forEach((cell, j) => { tgt[c1 - 1 + j] = cell; });
+        });
+      },
       clearContent: () => { rows.splice(r1 - 1, nR); }
     })
   };
@@ -91,6 +100,7 @@ function load(env) {
   const fn = new Function(...names, code +
     '\n;return {doGet,doPost,route,apiState,apiSignup,apiList,apiVote,apiRank,apiAdmin,' +
     'getSettings,signupCount,signupNos,nextNo,setup,computeRank,finalistList,mutedList,' +
+    'bumpEpoch,' +
     'CRITERIA,MIN_SONGS,FINALISTS};');
   return fn(...names.map(n => env[n]));
 }
@@ -625,67 +635,106 @@ function signup(api, name, songs, d) {
   eq(api.apiAdmin({ pw: PW, cmd: 'reset' }).settings.muted.length, 0, 'reset 把暫停名單也清掉');
 }
 
-/* ══════════ 22. 單獨刪除參賽者 ══════════ */
+/* ══════════ 22. 單獨刪除參賽者：剩下的人重新編號 ══════════ */
 {
   const { env, api } = setup({ voteOpen: true });
   signup(api, '甲', null, dev(1));
   signup(api, '乙', null, dev(2));
   signup(api, '丙', null, dev(3));
-  api.apiVote({ dev: dev(7), no: 3, s1: 3, s2: 3, s3: 3 });
-  api.apiVote({ dev: dev(9), no: 2, s1: 5, s2: 5, s3: 5 });   // 這支手機只評過待會要刪的人
+  api.apiVote({ dev: dev(7), no: 3, s1: 3, s2: 3, s3: 3 });   // 給丙的票，小計 9
+  api.apiVote({ dev: dev(9), no: 2, s1: 5, s2: 5, s3: 5 });   // 給待會要刪掉的乙，小計 15
 
   const d = api.apiAdmin({ pw: PW, cmd: 'removeOne', no: 2 });
   eq(d.ok, true, '刪掉 2 號');
   eq(d.removed.name, '乙', '回報刪掉的是誰，畫面才講得出名字');
-  eq(d.signups.map(x => x.no).join(','), '1,3', '名單上只剩 1、3 號');
+  eq(d.signups.map(x => x.no).join(','), '1,2', '⚠ 序號連貫：刪完是 1、2，不是 1、3');
+  eq(d.signups.map(x => x.name).join(','), '甲,丙', '報名先後（＝上台順序）沒被打亂');
   eq(env.__sheets['報名'].rows.length, 3, '報名分頁真的少一列（表頭＋兩位）');
 
-  // 編號不回收：刪掉 2 號之後新報名的人必須拿 4 號，不能再拿 3 號
-  const n = signup(api, '丁', null, dev(4));
-  eq(n.no, 4, '新報名拿最大編號 +1（不是列數，不會撞到既有編號）');
-  eq(api.apiList().list.map(x => x.no).join(','), '1,3,4', '名單編號有缺口是正常的');
+  // ⚠ 這幾條是重點：票掛在編號上，重編號沒把票一起換的話會掛到別人頭上，
+  //   而且畫面上完全看不出來——丙會突然多出乙那 15 分。
+  const bing = byNo(d.rank, 2);
+  eq(bing.name, '丙', '2 號現在是丙');
+  eq(bing.votes, 1, '丙原本收到的票跟著他換號');
+  eq(bing.total, 9, '而且分數還是他自己的 9 分，不是乙的 15 分');
+  eq(byNo(d.rank, 1).votes, 0, '甲本來就沒票，不會平白多出來');
+  eq(d.voters, 1, '只評過被刪者的那支手機不再列入');
 
-  // 剩下的人評分不受影響，尤其是「最大的那個編號」
-  eq(api.apiVote({ dev: dev(8), no: 4, s1: 5, s2: 5, s3: 5 }).ok, true,
-     '編號大於目前人數的那位照樣評得了');
-  eq(api.apiVote({ dev: dev(8), no: 2, s1: 5, s2: 5, s3: 5 }).err, 'badno',
-     '刪掉的編號評不了');
+  // 乙的票留在試算表，但編號改成 0——0 不會是任何人的編號，永遠計不到別人頭上
+  eq(env.__sheets['評分紀錄'].rows.length, 3, '票沒被刪掉（表頭＋兩票）');
+  eq(Number(env.__sheets['評分紀錄'].rows[2][2]), 0, '被刪那位的票，參賽編號寫成 0');
+  eq(Number(env.__sheets['評分紀錄'].rows[1][2]), 2, '丙那票的參賽編號從 3 改成 2');
 
-  // 評分紀錄留著，但不計分
-  eq(env.__sheets['評分紀錄'].rows.length, 4, '被刪的人的票還留在試算表（表頭＋三票）');
-  const st = api.apiAdmin({ pw: PW, cmd: 'status' });
-  eq(st.rank.filter(r => r.no === 2).length, 0, '名次表上沒有被刪掉的人');
-  eq(st.voters, 2, '只評過被刪者的那支手機不再列入「幾支手機評過分」');
-
+  // 編號連貫，下一個報名的人直接接著拿
+  eq(signup(api, '丁', null, dev(4)).no, 3, '新報名拿 3 號，序號接得上');
+  eq(api.apiList().list.map(x => x.no).join(','), '1,2,3', '名單沒有缺號');
+  eq(api.apiVote({ dev: dev(8), no: 3, s1: 5, s2: 5, s3: 5 }).ok, true, '新的 3 號評得了');
+  eq(api.apiVote({ dev: dev(8), no: 4, s1: 5, s2: 5, s3: 5 }).err, 'badno', '沒有的編號評不了');
   eq(api.apiAdmin({ pw: PW, cmd: 'removeOne', no: 99 }).err, 'badno', '刪不存在的編號回 badno');
 }
 
-/* ══════════ 23. 刪除要跟決賽名單、暫停名單連動 ══════════ */
+/* ══════════ 23. 重新編號要連決賽名單、暫停名單一起換 ══════════ */
 {
   const { api } = setup({ voteOpen: true });
   ['甲', '乙', '丙'].forEach((n, i) => signup(api, n, null, dev(i + 1)));
   api.apiVote({ dev: dev(7), no: 1, s1: 5, s2: 5, s3: 5 });
   api.apiVote({ dev: dev(7), no: 2, s1: 4, s2: 4, s3: 4 });
   api.apiVote({ dev: dev(7), no: 3, s1: 3, s2: 3, s3: 3 });
-  api.apiAdmin({ pw: PW, cmd: 'muteOne', no: 2 });
+  api.apiAdmin({ pw: PW, cmd: 'muteOne', no: 3 });
   api.apiAdmin({ pw: PW, cmd: 'finals' });
   eq(api.getSettings().finalists.join(','), '1,2,3', '三位都晉級');
 
   const d = api.apiAdmin({ pw: PW, cmd: 'removeOne', no: 2 });
-  eq(d.settings.finalists.join(','), '1,3', '刪掉的人從決賽名單拿掉');
-  eq(d.settings.muted.length, 0, '刪掉的人也從暫停名單拿掉');
-  eq(d.settings.finalists.indexOf(1), 0, '決賽名單原本的順序不被打亂');
+  eq(d.settings.finalists.join(','), '1,2', '決賽名單換成新編號（丙從 3 變 2）');
+  eq(d.settings.muted.join(','), '2', '暫停名單也換成新編號');
+  eq(d.signups.map(x => x.name).join(','), '甲,丙', '晉級順序沒被打亂');
+  eq(byNo(d.signups, 2).off, true, '丙換號之後還是暫停中');
+
+  // 初賽名次也要對得起來——票已經改號，查回去的人名不能錯
+  eq(byNo(d.prelim, 2).name, '丙', '回頭查初賽時 2 號是丙');
+  eq(byNo(d.prelim, 2).total, 9, '而且還是丙自己的分數');
 }
 
 /* ══════════ 24. 刪除也要包鎖 ══════════ */
 {
   const { env, api } = setup();
   signup(api, '甲', null, dev(1));
+  signup(api, '乙', null, dev(2));
   env.__lockBusy = true;
   const d = api.apiAdmin({ pw: PW, cmd: 'removeOne', no: 1 });
   eq(d.err, 'busy', '拿不到鎖就回 busy');
   env.__lockBusy = false;
-  eq(env.__sheets['報名'].rows.length, 2, '拿不到鎖時一列都沒刪掉');
+  eq(env.__sheets['報名'].rows.length, 3, '拿不到鎖時一列都沒刪掉');
+  eq(api.apiList().list.map(x => x.no).join(','), '1,2', '也沒有重編到一半就停住');
+}
+
+/* ══════════ 25. epoch：什麼時候該叫同仁的手機忘掉「我評過誰」 ══════════ */
+{
+  // 同仁的手機把「我評過幾號」存在自己的 localStorage。編號重編過、或分數被清掉之後，
+  // 那些記號指的已經不是同一個人——手機靠這個數字有沒有變來判斷要不要清掉。
+  const { api } = setup({ voteOpen: true });
+  signup(api, '甲', null, dev(1));
+  signup(api, '乙', null, dev(2));
+  api.apiVote({ dev: dev(7), no: 1, s1: 5, s2: 5, s3: 5 });
+
+  eq(api.apiList().epoch, 0, '一開始是 0');
+  eq(api.apiState().epoch, 0, 'state 也帶得出來');
+
+  api.apiAdmin({ pw: PW, cmd: 'voteOpen' });
+  eq(api.apiList().epoch, 0, '只是開關評分不算——沒事別清掉同仁的記號');
+  api.apiAdmin({ pw: PW, cmd: 'muteOne', no: 1 });
+  eq(api.apiList().epoch, 0, '暫停某一位也不算，編號沒動');
+
+  api.apiAdmin({ pw: PW, cmd: 'clearVotes' });
+  eq(api.apiList().epoch, 1,
+     '⚠ 只清分數一定要 +1：不清的話同仁手機還顯示「已評」，整場沒人重評得了');
+
+  api.apiAdmin({ pw: PW, cmd: 'removeOne', no: 1 });
+  eq(api.apiList().epoch, 2, '刪人重編號 +1');
+
+  api.apiAdmin({ pw: PW, cmd: 'reset' });
+  eq(api.apiList().epoch, 3, '⚠ reset 是 +1 不是歸零——歸零的話手機比對不出有變化');
+  eq(api.apiList().list.length, 0, '名單是空的時候也照樣回得出 epoch');
 }
 
 /* ══════════ 收尾 ══════════ */

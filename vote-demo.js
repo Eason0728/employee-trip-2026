@@ -22,7 +22,7 @@
   }
   function fresh() {
     return {
-      signups: [], votes: [], round: 1, finalists: [], muted: [],
+      signups: [], votes: [], round: 1, finalists: [], muted: [], epoch: 0,
       settings: { signupOpen: true, voteOpen: true, published: false }
     };
   }
@@ -31,6 +31,7 @@
     if (!db.round) db.round = 1;
     if (!db.finalists) db.finalists = [];
     if (!db.muted) db.muted = [];
+    if (typeof db.epoch !== 'number') db.epoch = 0;
     return db;
   }
   function save(db) { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
@@ -71,7 +72,7 @@
     db.signups.forEach(function (s) { names[s.no] = s.name; });
     db.votes.forEach(function (v) {
       if ((v.round || 1) !== want) return;      // 不是這一輪的票就不算
-      if (!(v.no in names)) return;             // 報名那列已經刪掉了，票不算
+      if (!(v.no in names)) return;             // 報名那列已經刪掉了（編號被改成 0），票不算
       var key = v.dev + '#' + v.no;
       if (seen[key]) return;                    // 同裝置對同一人只取第一筆
       seen[key] = 1;
@@ -100,7 +101,8 @@
       published : db.settings.published,
       round     : db.round,
       finalists : db.finalists.slice(),
-      muted     : db.muted.slice()
+      muted     : db.muted.slice(),
+      epoch     : db.epoch
     };
   }
 
@@ -116,7 +118,8 @@
         return reply(done, { ok: true, signupOpen: st.signupOpen, voteOpen: st.voteOpen,
                              published: st.published, criteria: CRITERIA,
                              minSongs: MIN_SONGS, count: db.signups.length,
-                             round: db.round, finalists: db.finalists.slice() });
+                             round: db.round, finalists: db.finalists.slice(),
+                             epoch: db.epoch });
 
       case 'signup': {
         if (!st.signupOpen) return reply(done, { ok: false, err: 'signupClosed' });
@@ -137,7 +140,7 @@
       }
 
       case 'list':
-        return reply(done, { ok: true, list: listOut(db) });
+        return reply(done, { ok: true, list: listOut(db), epoch: db.epoch });
 
       case 'vote': {
         if (!st.voteOpen) return reply(done, { ok: false, err: 'voteClosed' });
@@ -200,6 +203,7 @@
         if (cmd === 'clearVotes') {
           db.votes = db.votes.filter(function (v2) { return (v2.round || 1) !== db.round; });
           st.published = false;
+          db.epoch += 1;   // 同仁的手機要忘掉「我評過誰」，不然重評不了
         }
         var removed = null;
         if (cmd === 'muteOne' || cmd === 'unmuteOne') {
@@ -216,12 +220,18 @@
           var hit = db.signups.filter(function (s) { return s.no === dno; })[0];
           if (!hit) return reply(done, { ok: false, err: 'badno' });
           removed = { no: dno, name: hit.name };
+          // 刪完重新編號成 1、2、3…（序號要連貫），票也一起換號，不然會掛到別人頭上
+          var map = {};
           db.signups = db.signups.filter(function (s) { return s.no !== dno; });
-          db.finalists = db.finalists.filter(function (n) { return n !== dno; });
-          db.muted     = db.muted.filter(function (n) { return n !== dno; });
-          // 票不刪——rank() 只認名單上還在的人，所以不會影響名次
+          db.signups.forEach(function (s, i) { map[s.no] = i + 1; s.no = i + 1; });
+          db.votes.forEach(function (v) { v.no = map[v.no] || 0; });
+          db.finalists = db.finalists.map(function (n) { return map[n] || 0; })
+                           .filter(function (n) { return n; });
+          db.muted = db.muted.map(function (n) { return map[n] || 0; })
+                       .filter(function (n) { return n; });
+          db.epoch += 1;
         }
-        if (cmd === 'reset') db = fresh();
+        if (cmd === 'reset') { var e0 = db.epoch; db = fresh(); db.epoch = e0 + 1; }
 
         save(db);
         var rr = rank(db);

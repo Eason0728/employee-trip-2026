@@ -305,11 +305,13 @@ if (!dev) {
 }
 
 /* 本機記著自己報名了誰、評過誰——省一次往返，也讓離線時畫面不會空白 */
-var MINE_KEY = 'ddgs-mine', VOTED_KEY = 'ddgs-voted';
+var MINE_KEY = 'ddgs-mine', VOTED_KEY = 'ddgs-voted', EPOCH_KEY = 'ddgs-epoch';
 function readJSON(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } }
 function writeJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 var mine  = readJSON(MINE_KEY, null);      // { no, name, songs }
 var voted = readJSON(VOTED_KEY, {});       // { 編號: [s1,s2,s3] }
+// 後端每次重編號或清分數就 +1。跟上次看到的不一樣，代表 voted 裡的編號已經指不到同一個人。
+var epoch = readJSON(EPOCH_KEY, null);
 
 /* ══════════ JSONP ══════════ */
 var seq = 0;
@@ -477,9 +479,41 @@ function loadList(force, btn) {
     idle();
     if (!res || !res.ok) { say(errText(res && res.err), 'bad'); return; }
     list = res.list || [];
+    syncEpoch(res.epoch);
+    syncMyNo();
     renderPeople();
     renderSignupList();
   }, function (e) { idle(); say(errText(e), 'bad'); });
+}
+
+/**
+ * 主持人重編過號或把分數清掉之後，手機上記的「我評過幾號」就不能信了：
+ * 那個編號現在是別人。不清的話畫面會顯示「已評」，而且點進去只給看舊分數，
+ * 等於那一位從此評不了——只清分數要重評的場合會整場卡住。
+ */
+function syncEpoch(now) {
+  if (typeof now !== 'number') return;          // 舊版後端沒有這個欄位，就別動
+  if (epoch !== null && epoch !== now && Object.keys(voted).length) {
+    voted = {};
+    writeJSON(VOTED_KEY, voted);
+    picked = null;
+    document.getElementById('voteForm').hidden = true;
+    document.getElementById('voteDone').hidden = true;
+    say('主持人動過名單，編號重新排過了。你送出的分數都還在，只是手機上的「已評」記號重算一次'
+      + '——不小心重評也沒關係，同一個人只算第一次。', 'wait', true);
+  }
+  epoch = now;
+  writeJSON(EPOCH_KEY, epoch);
+}
+
+/** 前面有人被刪掉的話自己的編號會往前挪，報名完成頁上那個號碼要跟著改 */
+function syncMyNo() {
+  if (!mine) return;
+  var hit = list.filter(function (x) { return x.name === mine.name; })[0];
+  if (!hit || hit.no === mine.no) return;
+  mine.no = hit.no;
+  writeJSON(MINE_KEY, mine);
+  showMine();
 }
 
 function renderSignupList() {
