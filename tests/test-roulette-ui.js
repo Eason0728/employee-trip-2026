@@ -372,6 +372,8 @@ function backend(p) {
   await page.click('#loginBtn');
   await page.waitForSelector('#panel:not([hidden])', { timeout: 8000 });
   eq(await txt(page, '#phasePill'), '尚未開始（先設隊長）', '一進去是尚未開始');
+  eq(await page.$$eval('#panel thead th', es => es.map(e => e.textContent)).then(a => a.join('/')),
+     '姓名/隊伍/角色/狀態/', '名冊有角色這一欄');
 
   await page.fill('#leadR', '紅隊長');
   await page.fill('#leadW', '白隊長');

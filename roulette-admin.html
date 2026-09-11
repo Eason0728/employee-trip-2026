@@ -146,7 +146,7 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
     <!-- 名冊 -->
     <section class="card">
       <div class="lbl">名冊</div>
-      <table><thead><tr><th>姓名</th><th>隊伍</th><th>狀態</th><th></th></tr></thead>
+      <table><thead><tr><th>姓名</th><th>隊伍</th><th>角色</th><th>狀態</th><th></th></tr></thead>
         <tbody id="rosterBody"></tbody></table>
     </section>
 
@@ -165,7 +165,9 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
 var API = window.ROULETTE_API || 'https://script.google.com/macros/s/AKfycbwvQYMH5X_VYWzMh1H1D3JvdTqHVfG0rYnfyO2T061YOiirYkrWKoHD82K43FNvGxAsEw/exec';
 var API_READY = /^(https?:\/\/|\/)/.test(API);   // 佔位符不是網址，所以會是 false
 
-var TEAM = { RED: '豪火戰隊', WHITE: '榆你相遇' };
+var TEAM = { RED: '豪火戰隊', WHITE: '榆你相遇隊' };
+// 角色顯示名稱要跟 roulette.html 的 ROLES 一致
+var ROLES = { ASSAULT: '突擊手', CANNON: '重炮手', SNIPER: '狙擊手', LEADER: '隊長' };
 var $ = function (id) { return document.getElementById(id); };
 var PW = '', poll = null, clearArmed = false, closeArmed = false;
 
@@ -227,7 +229,8 @@ function paint(d, phase) {
     var st = r.status === 'LOCKED' ? (r.src === 'LEADER' ? '★ 隊長' : '已定案')
            : r.status === 'PENDING' ? '<span class="tag pend">暫定</span>'
            : '<span class="tag un">還沒抽</span>';
-    tr.innerHTML = '<td>' + esc(r.name) + '</td><td>' + teamTag + '</td><td>' + st + '</td>'
+    tr.innerHTML = '<td>' + esc(r.name) + '</td><td>' + teamTag + '</td>'
+      + '<td>' + (ROLES[r.role] || '—') + '</td><td>' + st + '</td>'
       + '<td class="act"><button class="btn btn-g" data-move="' + esc(r.name) + '">換隊</button> '
       + '<button class="btn btn-d" data-del="' + esc(r.name) + '">刪</button></td>';
     tb.appendChild(tr);
@@ -237,7 +240,7 @@ function paint(d, phase) {
       var nm = b.getAttribute('data-move');
       var cur = (d.rows.filter(function (x) { return x.name === nm; })[0] || {}).team;
       var to = cur === 'RED' ? 'WHITE' : 'RED';
-      if (!confirm(nm + ' → ' + TEAM[to] + '？')) return;
+      if (!confirm(nm + ' → ' + TEAM[to] + '？\n（換隊之後角色會重新配一次）')) return;
       var r = await admin('move', { name: nm, team: to });
       r.ok ? load() : say('bad', r.message);
     };
