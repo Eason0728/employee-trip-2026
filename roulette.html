@@ -123,14 +123,22 @@ header{position:sticky;top:0;z-index:20;padding-top:env(safe-area-inset-top,0px)
 .vs{flex:0 0 auto;align-self:center;font-family:var(--f-mono);font-size:.5625rem;letter-spacing:.1em;color:var(--cyan);
   border:1px solid var(--cyan);border-radius:.3rem;padding:.28rem .3rem}
 .wheelbox{position:relative;margin:.5rem auto 0;width:min(80vw,310px);aspect-ratio:1}
-.wheel{pointer-events:none;position:absolute;inset:0;border-radius:50%;
-  background:conic-gradient(var(--white-team) 0deg 180deg, var(--red) 180deg 360deg);
+.wheel{pointer-events:none;position:absolute;inset:0;border-radius:50%;overflow:hidden;
+  background:conic-gradient(var(--red) 0deg 90deg, var(--white-team) 90deg 270deg,
+             var(--red) 270deg 360deg);
   box-shadow:0 0 0 6px var(--surface-low),0 0 0 7px var(--outline),0 0 44px rgba(255,59,82,.28)}
-.wheel .seg{position:absolute;top:50%;font-family:var(--f-display);font-weight:900;
-  font-size:clamp(1rem,4.8vw,1.4rem);letter-spacing:.12em;white-space:nowrap;
-  writing-mode:vertical-rl;text-orientation:upright;transform:translateY(-50%)}
-.wheel .seg.r{left:11%;color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)}
-.wheel .seg.w{right:11%;color:#12203a}
+/* 一按下去就轉；停住時一定停在 360 的倍數，所以隊名永遠是正的（紅在上、白在下） */
+.wheel.spinning{animation:spin .62s linear infinite}
+.wheel .half{position:absolute;left:0;right:0;height:50%;display:flex;justify-content:center}
+.wheel .half.top{top:0;align-items:flex-start;padding-top:7%}
+.wheel .half.bot{bottom:0;align-items:flex-end;padding-bottom:7%}
+.wheel .half::after{content:'';position:absolute;inset:0;background:rgba(4,6,12,.62);
+  opacity:0;transition:opacity .45s ease;pointer-events:none}
+.wheel .half.lose::after{opacity:1}
+.wheel .seg{font-family:var(--f-display);font-weight:900;white-space:nowrap;
+  font-size:clamp(1.05rem,5.4vw,1.55rem);letter-spacing:.06em}
+.wheel .seg.r{color:#fff;text-shadow:0 2px 8px rgba(0,0,0,.5)}
+.wheel .seg.w{color:#12203a}
 .glass{position:absolute;inset:0;border-radius:50%;pointer-events:none;overflow:hidden}
 .glass::before{content:'';position:absolute;left:-30%;top:-120%;width:60%;height:340%;
   background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);
@@ -148,9 +156,8 @@ header{position:sticky;top:0;z-index:20;padding-top:env(safe-area-inset-top,0px)
 .hub.live{animation:pulse 2.4s ease-in-out infinite}
 @keyframes pulse{0%,100%{box-shadow:0 0 22px rgba(0,238,252,.35),inset 0 0 18px rgba(0,238,252,.14)}
   50%{box-shadow:0 0 34px rgba(0,238,252,.6),inset 0 0 22px rgba(0,238,252,.22)}}
-.needle{position:absolute;inset:-16px;z-index:3;pointer-events:none}
-/* 一按下去就開始轉，不等後端。結果回來才減速收住——中間沒有任何一刻是停著的 */
-.needle.spinning{animation:spin .55s linear infinite}
+.needle{position:absolute;inset:-16px;z-index:3;pointer-events:none;
+  transition:transform .5s cubic-bezier(.3,1.5,.5,1)}
 .ptr{position:absolute;left:50%;top:-4px;transform:translateX(-50%);width:0;height:0;
   border-left:13px solid transparent;border-right:13px solid transparent;
   border-top:20px solid var(--cyan);filter:drop-shadow(0 0 7px rgba(0,238,252,.85))}
@@ -325,8 +332,8 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
         <svg class="ticks" viewBox="0 0 100 100" aria-hidden="true" id="ticks"></svg>
         <div class="needle" id="needle"><span class="ptr"></span></div>
         <div class="wheel" id="wheel">
-          <span class="seg w" data-team="WHITE"></span>
-          <span class="seg r" data-team="RED"></span>
+          <span class="half top" id="halfTop"><span class="seg r" data-team="RED"></span></span>
+          <span class="half bot" id="halfBot"><span class="seg w" data-team="WHITE"></span></span>
           <span class="glass"></span>
         </div>
         <div class="hubwrap">
@@ -460,7 +467,8 @@ var CONFIG = {
   subtitle:      'SPLAT-HQ // 2026 員旅 · 獵鷹漆彈',  // 頁首副標
   feedSeconds:   3,      // 跑馬燈每則停留幾秒
   feedItems:     14,     // 跑馬燈最多帶幾則
-  settleMs:      900,    // 結果回來之後，指針收住要花幾毫秒
+  spinMs:        5000,   // 按下去之後轉盤總共轉幾毫秒
+  settleMs:      1100,   // 最後減速停住要花幾毫秒（算在 spinMs 裡面）
   adminHref:     'roulette-admin.html'               // 左上角標題連到哪（主持人入口）
 };
 /* ⚠️ 貼到 LINE 的那張分享卡片不吃這裡的設定——它讀的是 <head> 裡的 og: 標籤。
@@ -660,21 +668,27 @@ function esc(s) { return String(s).replace(/[&<>"']/g, function (c) {
   return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
 /* ── 轉盤動畫：後端先給結果，前端只負責演出 ──
-   盤面固定（紅在左、白在右，隊名永遠是正的），改成指針繞圈。
-   一開始是讓盤面轉，但停下來時隊名會上下顛倒，很難看。
+   大圓盤自己轉五秒，**停住時一定停在 360 的倍數**，所以隊名永遠是正的
+   （紅在上、白在下，不會上下顛倒）。勝出的那一半留亮、另一半壓暗，指針再擺過去指著它。
 
-   ⚠️ 按下去要「立刻」有反應。先用 CSS 動畫一直轉，等後端回來才減速收住，
-   所以使用者感覺到的等待就只剩連線時間本身，沒有額外的動畫延遲。 */
+   ⚠️ 按下去要「立刻」有反應：先用 CSS 動畫轉起來，不等後端。
+   結果回來得早就補滿 spinMs 再收住，回來得晚就馬上收住。 */
+var spinStartedAt = 0;
+
 function startSpin() {
-  var el = $('needle');
-  el.style.transition = 'none';
-  el.style.transform = '';          // 交給 CSS 動畫接手
-  el.classList.add('spinning');
+  var w = $('wheel');
+  spinStartedAt = Date.now();
+  $('halfTop').classList.remove('lose');
+  $('halfBot').classList.remove('lose');
+  $('needle').style.transform = 'rotate(0deg)';
+  w.style.transition = 'none';
+  w.style.transform = '';            // 交給 CSS 動畫接手
+  w.classList.add('spinning');
 }
 function stopSpin() {
-  var el = $('needle');
-  el.classList.remove('spinning');
-  el.style.transition = 'none';
+  var w = $('wheel');
+  w.classList.remove('spinning');
+  w.style.transition = 'none';
 }
 function currentAngle(el) {
   try {
@@ -684,19 +698,25 @@ function currentAngle(el) {
 }
 function settleTo(team) {
   return new Promise(function (resolve) {
-    var el = $('needle');
-    var cur = currentAngle(el);
-    el.classList.remove('spinning');
-    el.style.transition = 'none';
-    el.style.transform = 'rotate(' + cur.toFixed(2) + 'deg)';
-    void el.offsetWidth;                            // 逼瀏覽器立刻套用，不然下一行會被合併掉
-    var base = team === 'RED' ? 270 : 90;           // 270°＝指向左半邊（紅），90°＝右半邊（白）
-    var jitter = Math.floor(Math.random() * 110) - 55;
-    var toNext = (360 - (((cur % 360) + 360) % 360)) % 360;
-    var target = cur + toNext + 360 + base + jitter;   // 再轉一圈多一點才停，看得出減速
-    el.style.transition = 'transform ' + CONFIG.settleMs + 'ms cubic-bezier(.16,.7,.15,1)';
-    el.style.transform = 'rotate(' + target.toFixed(2) + 'deg)';
-    setTimeout(resolve, CONFIG.settleMs + 60);
+    // 結果來得比五秒早，就讓它繼續轉到該減速的那一刻
+    var wait = Math.max(0, CONFIG.spinMs - CONFIG.settleMs - (Date.now() - spinStartedAt));
+    setTimeout(function () {
+      var w = $('wheel');
+      var cur = currentAngle(w);
+      w.classList.remove('spinning');
+      w.style.transition = 'none';
+      w.style.transform = 'rotate(' + cur.toFixed(2) + 'deg)';
+      void w.offsetWidth;                      // 逼瀏覽器立刻套用，不然下一行會被合併掉
+      // 停在 360 的倍數 → 紅永遠在上、白永遠在下、字永遠是正面的
+      var target = cur + ((360 - (((cur % 360) + 360) % 360)) % 360) + 360;
+      w.style.transition = 'transform ' + CONFIG.settleMs + 'ms cubic-bezier(.16,.72,.14,1)';
+      w.style.transform = 'rotate(' + target.toFixed(2) + 'deg)';
+      setTimeout(function () {
+        (team === 'RED' ? $('halfBot') : $('halfTop')).classList.add('lose');
+        $('needle').style.transform = 'rotate(' + (team === 'RED' ? 0 : 180) + 'deg)';
+        setTimeout(resolve, 520);
+      }, CONFIG.settleMs);
+    }, wait);
   });
 }
 

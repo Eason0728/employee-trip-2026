@@ -243,10 +243,18 @@ function backend(p) {
 
   // 按下去要「立刻」開始轉，不能等後端回來才動
   await page.click('#spinBtn');
-  const spinningNow = await page.$eval('#needle', e => e.classList.contains('spinning'));
-  eq(spinningNow, true, '一按下去指針就開始轉，不等後端');
-  await page.waitForSelector('#mask:not([hidden])', { timeout: 15000 });
-  eq(await page.$eval('#needle', e => e.classList.contains('spinning')), false, '結果出來就停止空轉');
+  const spinningNow = await page.$eval('#wheel', e => e.classList.contains('spinning'));
+  eq(spinningNow, true, '一按下去大圓盤就開始轉，不等後端');
+  await page.waitForSelector('#mask:not([hidden])', { timeout: 25000 });
+  eq(await page.$eval('#wheel', e => e.classList.contains('spinning')), false, '結果出來就停止空轉');
+  // 停住時一定停在 360 的倍數，隊名才不會上下顛倒
+  const deg = await page.$eval('#wheel', e => {
+    const m = new DOMMatrixReadOnly(getComputedStyle(e).transform);
+    return Math.round(Math.atan2(m.b, m.a) * 180 / Math.PI);
+  });
+  ok(Math.abs(deg) <= 1, '轉完停在 360 的倍數，隊名是正面的', deg + '°');
+  const dimmed = await page.$$eval('.wheel .half', es => es.map(e => e.className.includes('lose')));
+  eq(dimmed.filter(Boolean).length, 1, '只有落敗的那一半被壓暗');
   const t1 = await txt(page, '#dlgTeam');
   ok(t1 === '豪火戰隊' || t1 === '榆你相遇隊', '第一次抽到的是兩隊之一', t1);
   ok((await txt(page, '#dlgTitle')).includes('尚未定案'), '第一次的標題寫「尚未定案」');
