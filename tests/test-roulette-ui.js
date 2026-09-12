@@ -227,6 +227,30 @@ function backend(p) {
   eq(await page.$$eval('*', es => es.filter(e => e.textContent === 'AUTH_KEY').length), 0,
      '畫面上不再顯示 AUTH_KEY');
 
+  /* ── 1b. 瀏覽器裡存著不合規的舊名字 ── */
+  section('1b. 舊名字不合規時不要填進框裡');
+  {
+    const c3 = await browser.newContext({ timezoneId: 'Asia/Taipei', viewport: { width: 390, height: 844 } });
+    const p3 = await c3.newPage();
+    await p3.route('**/script.google.com/**', route => {
+      const u = new URL(route.request().url());
+      const q = {}; u.searchParams.forEach((v, k) => { q[k] = v; });
+      route.fulfill({ status: 200, contentType: 'application/javascript',
+                      body: q.callback + '(' + JSON.stringify(backend(q)) + ');' });
+    });
+    // 規則變更前留下來的舊值（六個數字），用程式填會繞過 maxlength
+    await p3.addInitScript(a => {
+      window.ROULETTE_API = a;
+      try { localStorage.setItem('tripRoulette2026Name', '123452'); } catch (e) {}
+    }, API);
+    await p3.goto(HOST + '/roulette.html', { waitUntil: 'domcontentloaded' });
+    await wait(1500);
+    eq(await p3.$eval('#nameInput', e => e.value), '', '不合規的舊名字不會被填進輸入框');
+    eq(await p3.$eval('#charTag', e => e.textContent), '0/3', '字數不會出現 6/3 這種畫面');
+    eq(await p3.$eval('#checkinBtn', e => e.disabled), true, '「報到」是死的');
+    await c3.close();
+  }
+
   /* ── 2. 報到 ── */
   section('2. 報到');
   await page.fill('#nameInput', '測試甲');

@@ -505,7 +505,27 @@ var $ = function (id) { return document.getElementById(id); };
   $('subTitle').textContent = CONFIG.subtitle;
   $('adminLink').setAttribute('href', CONFIG.adminHref);
 })();
-if (myName) $('nameInput').value = myName;
+function typedName() { return (($('nameInput').value || myName) || '').trim(); }
+/** 姓名格式：預設限定三個中文字。規則在上面的 CONFIG，改那裡就好。 */
+function nameError(n) {
+  if (!n) return '請輸入你的名字。';
+  if (CONFIG.nameZhOnly && !/^[\u4e00-\u9fff]+$/.test(n)) return '請只輸入中文字。';
+  if (n.length < CONFIG.nameMin || n.length > CONFIG.nameMax) {
+    return CONFIG.nameMin === CONFIG.nameMax
+      ? '請輸入' + CONFIG.nameMin + '個中文字。'
+      : '請輸入 ' + CONFIG.nameMin + '～' + CONFIG.nameMax + ' 個中文字。';
+  }
+  return '';
+}
+function hasName() { return typedName().length > 0 && !nameError(typedName()); }
+/** 有沒有用「現在框裡這個名字」報到過。改了名字就要重新報到，不能沿用別人的報到 */
+function checkedIn() {
+  return ST.me.status !== 'NONE' && ST.me.name === typedName();
+}
+
+// ⚠️ 用程式設 .value 會繞過 maxlength。瀏覽器裡存著的舊名字可能是規則變更前留下的
+// （例如六個數字），照填會出現「6/3」這種畫面。所以預填前先驗一次，不合規就不填。
+if (myName && !nameError(myName)) $('nameInput').value = myName;
 
 function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; } return h; }
 /* 條碼：用裝置編號當種子，所以每支手機的通行證條碼都不同、而且固定不變 */
@@ -533,23 +553,6 @@ function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^=
   $('ticks').innerHTML = p.join('');
 })();
 
-function typedName() { return (($('nameInput').value || myName) || '').trim(); }
-/** 姓名格式：預設限定三個中文字。規則在上面的 CONFIG，改那裡就好。 */
-function nameError(n) {
-  if (!n) return '請輸入你的名字。';
-  if (CONFIG.nameZhOnly && !/^[\u4e00-\u9fff]+$/.test(n)) return '請只輸入中文字。';
-  if (n.length < CONFIG.nameMin || n.length > CONFIG.nameMax) {
-    return CONFIG.nameMin === CONFIG.nameMax
-      ? '請輸入' + CONFIG.nameMin + '個中文字。'
-      : '請輸入 ' + CONFIG.nameMin + '～' + CONFIG.nameMax + ' 個中文字。';
-  }
-  return '';
-}
-function hasName() { return typedName().length > 0 && !nameError(typedName()); }
-/** 有沒有用「現在框裡這個名字」報到過。改了名字就要重新報到，不能沿用別人的報到 */
-function checkedIn() {
-  return ST.me.status !== 'NONE' && ST.me.name === typedName();
-}
 $('nameInput').addEventListener('input', function () {
   $('charTag').textContent = this.value.length + '/' + CONFIG.nameMax;
   render();                      // 打滿字數，報到鈕就活過來
