@@ -200,10 +200,20 @@ function backend(p) {
     null, { timeout: 9000 });
   eq(await page.$eval('#spinBtn', e => e.disabled), true, '抽籤開放了，但沒打名字時轉盤是死的');
   eq(await page.$eval('#checkinBtn', e => e.disabled), true, '沒打名字時「報到」也是死的');
+  // 姓名限定三個中文字
   await page.fill('#nameInput', '甲');
+  await wait(300);
+  eq(await page.$eval('#checkinBtn', e => e.disabled), true, '只打一個字，「報到」還是死的');
+  ok((await txt(page, '#note')).includes('3個中文字'), '會說明要三個中文字');
+  await page.fill('#nameInput', 'abc');
+  await wait(300);
+  eq(await page.$eval('#checkinBtn', e => e.disabled), true, '打英文，「報到」是死的');
+  ok((await txt(page, '#note')).includes('只輸入中文字'), '會說明只收中文字');
+  await page.fill('#nameInput', '測試丁');
   await page.waitForFunction(() => !document.getElementById('checkinBtn').disabled, null, { timeout: 5000 });
-  eq(await page.$eval('#checkinBtn', e => e.disabled), false, '打了字「報到」才活');
-  eq(await page.$eval('#spinBtn', e => e.disabled), true, '只打名字、還沒報到，轉盤仍是死的');
+  eq(await page.$eval('#checkinBtn', e => e.disabled), false, '三個中文字才讓「報到」活起來');
+  eq(await page.$eval('#nameInput', e => e.maxLength), 3, '輸入框最多只能打三個字');
+  eq(await page.$eval('#spinBtn', e => e.disabled), true, '打好名字、還沒報到，轉盤仍是死的');
   await page.fill('#nameInput', '');
   await page.waitForFunction(() => document.getElementById('checkinBtn').disabled, null, { timeout: 5000 });
   eq(S.rows.length, 0, '整段過程後端一筆資料都沒產生');
@@ -219,11 +229,11 @@ function backend(p) {
 
   /* ── 2. 報到 ── */
   section('2. 報到');
-  await page.fill('#nameInput', '  測試甲  ');
+  await page.fill('#nameInput', '測試甲');
   await page.click('#checkinBtn');
   await page.waitForFunction(() => document.getElementById('note').textContent.includes('報到完成'), null, { timeout: 8000 });
   eq(S.rows.length, 1, '後端收到 1 筆報到');
-  eq(S.rows[0].name, '測試甲', '姓名前後空白被去掉');
+  eq(S.rows[0].name, '測試甲', '姓名存進後端');
   eq((await txt(page, '#capTag')).replace(/\s+/g, ' '), '報到 1 · 名額 6/6', '名額用起始下限撐成 6 對 6');
   eq(await txt(page, '#checkinBtn'), '已報到', '報到之後按鈕變成「已報到」');
   eq(await page.$eval('#checkinBtn', e => e.disabled), true, '報到之後不用再按一次');

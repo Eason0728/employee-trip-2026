@@ -348,7 +348,7 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
         <span class="lbl">ESPORTS TACTICAL ID // 戰士通行證</span>
       </div>
       <div class="idrow">
-        <input type="text" id="nameInput" placeholder="請輸入您的大名" maxlength="20" autocomplete="off">
+        <input type="text" id="nameInput" placeholder="請輸入三個中文字" maxlength="3" autocomplete="off">
         <button class="btn btn-c" id="checkinBtn">報到</button>
       </div>
       <div class="idfoot">
@@ -469,7 +469,11 @@ var CONFIG = {
   feedItems:     14,     // 跑馬燈最多帶幾則
   spinMs:        5000,   // 按下去之後轉盤總共轉幾毫秒
   settleMs:      1100,   // 最後減速停住要花幾毫秒（算在 spinMs 裡面）
-  adminHref:     'roulette-admin.html'               // 左上角標題連到哪（主持人入口）
+  adminHref:     'roulette-admin.html',              // 左上角標題連到哪（主持人入口）
+  // 姓名限制。有同仁的名字不是三個字時，把 nameMin 改 2、nameMax 改 4 就好。
+  nameMin:       3,
+  nameMax:       3,
+  nameZhOnly:    true                                // 只收中文字
 };
 /* ⚠️ 貼到 LINE 的那張分享卡片不吃這裡的設定——它讀的是 <head> 裡的 og: 標籤。
    改隊名不影響卡片（卡片文案沒提隊名）；要換卡片的圖就重出 roulette-share.png。 */
@@ -530,16 +534,27 @@ function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^=
 })();
 
 function typedName() { return (($('nameInput').value || myName) || '').trim(); }
-function hasName() { return typedName().length > 0; }
+/** 姓名格式：預設限定三個中文字。規則在上面的 CONFIG，改那裡就好。 */
+function nameError(n) {
+  if (!n) return '請輸入你的名字。';
+  if (CONFIG.nameZhOnly && !/^[\u4e00-\u9fff]+$/.test(n)) return '請只輸入中文字。';
+  if (n.length < CONFIG.nameMin || n.length > CONFIG.nameMax) {
+    return CONFIG.nameMin === CONFIG.nameMax
+      ? '請輸入' + CONFIG.nameMin + '個中文字。'
+      : '請輸入 ' + CONFIG.nameMin + '～' + CONFIG.nameMax + ' 個中文字。';
+  }
+  return '';
+}
+function hasName() { return typedName().length > 0 && !nameError(typedName()); }
 /** 有沒有用「現在框裡這個名字」報到過。改了名字就要重新報到，不能沿用別人的報到 */
 function checkedIn() {
   return ST.me.status !== 'NONE' && ST.me.name === typedName();
 }
 $('nameInput').addEventListener('input', function () {
-  $('charTag').textContent = this.value.length + '/20';
-  render();                      // 打第一個字，轉盤就活過來
+  $('charTag').textContent = this.value.length + '/' + CONFIG.nameMax;
+  render();                      // 打滿字數，報到鈕就活過來
 });
-$('charTag').textContent = $('nameInput').value.length + '/20';
+$('charTag').textContent = $('nameInput').value.length + '/' + CONFIG.nameMax;
 
 /* ── 送出：JSONP。逾時 60 秒，超過 8 秒先安撫 ── */
 var seq = 0, slowTimer = null, inflight = 0;
@@ -636,7 +651,9 @@ function render() {
   } else if (me.status === 'PENDING') {
     say('warn', '你抽到 <b>' + TEAM[me.team].name + '</b>，還沒定案。要留著就按確認，要再抽一次就按重抽。');
   } else if (!hasName()) {
-    say('', '第一步：在上面輸入你的名字。');
+    var typed = ($('nameInput').value || '').trim();
+    say(typed ? 'warn' : '', '第一步：在上面輸入你的名字。'
+      + (typed ? '<br>' + nameError(typed) : '（' + CONFIG.nameMin + ' 個中文字）'));
   } else if (!known) {
     say('', '第二步：按右邊的「報到」。報到之後中間那顆「選擇陣營」才會亮起來。');
   } else {
@@ -769,7 +786,8 @@ async function refresh(quiet) {
 
 $('checkinBtn').onclick = async function () {
   var n = $('nameInput').value.trim();
-  if (!n) { say('bad', '請先輸入你的名字。'); return; }
+  var bad = nameError(n);
+  if (bad) { say('bad', bad); return; }
   myName = n; ls(NAME_KEY, n);
   this.disabled = true; busy(true, '報到');
   var r = await call({ action: 'checkin', name: n, dev: dev });
@@ -781,7 +799,8 @@ $('checkinBtn').onclick = async function () {
 
 $('spinBtn').onclick = async function () {
   var n = typedName();
-  if (!n) { say('bad', '請先輸入你的名字。'); return; }
+  var badName = nameError(n);
+  if (badName) { say('bad', badName); return; }
   if (!checkedIn()) { say('bad', '請先按右邊的「報到」。'); return; }
   myName = n; ls(NAME_KEY, n);
   this.disabled = true; busy(true, '抽');
