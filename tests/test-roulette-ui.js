@@ -192,6 +192,24 @@ function backend(p) {
   eq(await page.$eval('#spinBtn', e => e.disabled), true, '還沒設隊長時轉盤按鈕是鎖的');
   ok((await txt(page, '#note')).includes('報到'), '提示要先報到');
   eq(await txt(page, '#spinBtn'), '選擇陣營EXECUTE', '中間那顆寫「選擇陣營」');
+
+  // 沒輸入名字就不該按得下去。原本是按鈕活的、按了只跳紅字，看起來像「沒名字也能啟動」
+  S.phase = 'DRAW';
+  await page.click('#reloadBtn');
+  await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
+    null, { timeout: 9000 });
+  eq(await page.$eval('#spinBtn', e => e.disabled), true, '抽籤開放了，但沒打名字時轉盤仍是死的');
+  await page.fill('#nameInput', '甲');
+  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
+  eq(await page.$eval('#spinBtn', e => e.disabled), false, '打了第一個字轉盤就活過來');
+  await page.fill('#nameInput', '');
+  await page.waitForFunction(() => document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
+  eq(await page.$eval('#spinBtn', e => e.disabled), true, '名字刪光又變回死的');
+  eq(S.rows.length, 0, '整段過程後端一筆資料都沒產生');
+  S.phase = 'CHECKIN';
+  await page.click('#reloadBtn');
+  await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '尚未開始',
+    null, { timeout: 9000 });
   // 裝置編號還在（識別身分要用），只是不再印在畫面上——Eason 2026-09-11 要求拿掉
   const devId = await page.evaluate(() => localStorage.getItem('tripRoulette2026Dev'));
   ok(/^dev_[0-9a-f]{12}$/.test(devId), '裝置編號格式 dev_ + 12 碼十六進位', devId);
@@ -215,8 +233,10 @@ function backend(p) {
   S.rows.unshift({ name: '紅隊長', dev: '', team: 'RED', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
   S.phase = 'DRAW';
   await page.click('#reloadBtn');
-  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 8000 });
+  await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
+    null, { timeout: 9000 });
   eq(await txt(page, '#phaseTag'), '抽籤進行中', '頁首顯示抽籤進行中');
+  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
 
   await page.click('#spinBtn');
   await page.waitForSelector('#mask:not([hidden])', { timeout: 15000 });
@@ -245,9 +265,10 @@ function backend(p) {
   await ctx.close();
 
   ({ ctx, page } = await openPage('roulette.html'));            // 全新裝置
-  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled ||
-                                    !document.getElementById('mine').hidden, null, { timeout: 8000 });
-  await page.fill('#nameInput', '測試甲');
+  await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
+    null, { timeout: 9000 });
+  await page.fill('#nameInput', '測試甲');                       // 先打名字，按鈕才會活
+  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
   await page.click('#spinBtn');
   await page.waitForFunction(() => !document.getElementById('mine').hidden, null, { timeout: 15000 });
   ok((await txt(page, '#mineSub')).includes('測試甲'), '換一支手機打同一個名字 → 看到原結果，不能重抽');
@@ -257,8 +278,10 @@ function backend(p) {
   /* ── 6. 重抽路徑 ── */
   section('6. 再次抽籤 → 直接定案');
   ({ ctx, page } = await openPage('roulette.html'));
-  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 8000 });
+  await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
+    null, { timeout: 9000 });
   await page.fill('#nameInput', '測試乙');
+  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
   await page.click('#spinBtn');
   await page.waitForSelector('#mask:not([hidden])', { timeout: 15000 });
   await page.click('#dlgActs .btn >> text=再次抽籤');       // 再次抽籤
@@ -277,8 +300,10 @@ function backend(p) {
   section('6b. 抽籤回應掉了，但資料其實進去了');
   {
     const { ctx: c2, page: p2 } = await openPage('roulette.html');
-    await p2.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 8000 });
+    await p2.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
+      null, { timeout: 9000 });
     await p2.fill('#nameInput', '斷線丙');
+    await p2.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
     truncateNextSpin = true;
     await p2.click('#spinBtn');
     // 應該自己去問一次狀態，然後把「已經抽到的結果」顯示出來，而不是讓他再按一次轉
@@ -310,7 +335,21 @@ function backend(p) {
   eq(mine.length, 1, '自己那張有標出來');
   ok(['突擊手','重炮手','狙擊手'].indexOf(mine[0]) > -1, '自己那張顯示角色', mine[0]);
   const leadRole = await page.$eval('#listR .chip.lead .rl', e => e.textContent);
-  eq(leadRole, '隊長', '隊長那張寫「隊長」，不占三個角色');
+  eq(leadRole, '總指揮', '隊伍第一張寫「總指揮」，不占三個角色');
+  // 雷達：每顆都會呼吸、節奏錯開；總指揮那顆最大
+  const blips = await page.$$eval('#radar circle[class]', es => es.map(e => ({
+    cls: e.getAttribute('class'), r: Number(e.getAttribute('r')),
+    delay: e.style.animationDelay,
+    anim: getComputedStyle(e).animationName
+  })));
+  ok(blips.length > 0, '雷達有光點');
+  eq(blips.every(b => b.anim === 'breathe'), true, '每顆光點都在呼吸');
+  eq(new Set(blips.map(b => b.delay)).size > 1, true, '呼吸節奏有錯開，不是整片一起閃');
+  const cmds = blips.filter(b => b.cls === 'cmd');
+  eq(cmds.length, 2, '兩顆總指揮光點');
+  ok(cmds.every(c => c.r > Math.max.apply(null, blips.filter(b => b.cls === 'blip').map(b => b.r))),
+     '總指揮那顆比所有人都大', JSON.stringify(cmds.map(c => c.r)));
+
   const bar = await page.$$eval('#roleR span', es => es.map(e => e.textContent));
   eq(bar.length, 3, '隊伍卡上有三個角色的人數統計');
   ok(bar[0].startsWith('突擊手') && bar[1].startsWith('重炮手') && bar[2].startsWith('狙擊手'),
@@ -373,7 +412,7 @@ function backend(p) {
   await page.fill('#pw', PW);
   await page.click('#loginBtn');
   await page.waitForSelector('#panel:not([hidden])', { timeout: 8000 });
-  eq(await txt(page, '#phasePill'), '尚未開始（先設隊長）', '一進去是尚未開始');
+  eq(await txt(page, '#phasePill'), '尚未開始（先設總指揮）', '一進去是尚未開始');
   eq(await page.$$eval('#panel thead th', es => es.map(e => e.textContent)).then(a => a.join('/')),
      '姓名/隊伍/角色/狀態/', '名冊有角色這一欄');
 
@@ -382,8 +421,8 @@ function backend(p) {
   page.once('dialog', d => d.accept());
   await page.click('#leadBtn');
   await page.waitForFunction(() => document.getElementById('phasePill').textContent === '抽籤進行中', null, { timeout: 8000 });
-  eq(S.phase, 'DRAW', '設好隊長就自動開始抽籤');
-  eq(S.rows.length, 2, '兩位隊長各佔一席');
+  eq(S.phase, 'DRAW', '設好總指揮就自動開始抽籤');
+  eq(S.rows.length, 2, '兩位總指揮各佔一席');
 
   // 三個人：兩個抽完、一個只報到
   S.rows.push({ name: '甲', dev: 'd1', team: 'RED', status: 'LOCKED', spins: 1, src: 'SELF', role: 'ASSAULT' });

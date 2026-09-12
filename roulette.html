@@ -224,6 +224,11 @@ input[type=text]:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 0 3p
 /* ── 雷達 ── */
 .radarwrap{position:relative}
 .radar{width:100%;aspect-ratio:1;max-width:320px;margin:.4rem auto 0;display:block}
+/* 光點呼吸。每顆的 animation-delay 不一樣，才不會整片一起亮一起暗 */
+.radar .blip{animation:breathe 2.6s ease-in-out infinite}
+.radar .cmd{animation:breathe 2s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.radar .blip,.radar .cmd{animation:none}}
 .radarwrap .sonar{position:absolute;left:50%;top:calc(.4rem + 50%);width:min(100%,320px);
   aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;pointer-events:none;
   overflow:hidden}
@@ -446,7 +451,7 @@ var ROLES = {
   ASSAULT: '突擊手',
   CANNON:  '重炮手',
   SNIPER:  '狙擊手',
-  LEADER:  '隊長'
+  LEADER:  '總指揮'
 };
 var ROLE_ORDER = ['ASSAULT', 'CANNON', 'SNIPER'];
 
@@ -515,8 +520,12 @@ function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^=
   $('ticks').innerHTML = p.join('');
 })();
 
+function hasName() {
+  return (($('nameInput').value || myName) || '').trim().length > 0;
+}
 $('nameInput').addEventListener('input', function () {
   $('charTag').textContent = this.value.length + '/20';
+  render();                      // 打第一個字，轉盤就活過來
 });
 $('charTag').textContent = $('nameInput').value.length + '/20';
 
@@ -596,13 +605,15 @@ function render() {
     $('mineSub').textContent = me.name + ' · ' + (ROLES[me.role] || '角色待定') + ' · ' + TEAM[me.team].tag;
   }
 
-  var canSpin = ST.phase === 'DRAW' && !locked;
+  // 沒輸入名字就不該按得下去。原本按鈕是活的、按了只跳一行紅字，
+  // 看起來像「沒輸入名字也能啟動轉盤」。
+  var canSpin = ST.phase === 'DRAW' && !locked && hasName();
   $('spinBtn').disabled = !canSpin;
   $('spinBtn').className = 'hub' + (canSpin ? ' live' : '');
 
   if (ST.phase === 'CHECKIN') {
-    say('', known ? '<b>' + me.name + '</b>，你已經報到了。等主持人設定好兩位隊長就能開抽。'
-                  : '先輸入你的名字報到。主持人設定好隊長之後就可以抽了。');
+    say('', known ? '<b>' + me.name + '</b>，你已經報到了。等主持人設定好兩位總指揮就能開抽。'
+                  : '先輸入你的名字報到。主持人設定好總指揮之後就可以抽了。');
   } else if (locked) {
     say('good', '你是 <b>' + TEAM[me.team].name + '</b> 的 <b>' + (ROLES[me.role] || '角色待定')
       + '</b>。這個結果已經定案，不會再變了。');
@@ -610,8 +621,10 @@ function render() {
     say('warn', '已經封盤了，這支手機沒有抽到紀錄。請找主持人。');
   } else if (me.status === 'PENDING') {
     say('warn', '你抽到 <b>' + TEAM[me.team].name + '</b>，還沒定案。要留著就按確認，要再抽一次就按重抽。');
+  } else if (!hasName()) {
+    say('', '先在上面輸入你的名字，中間那顆「選擇陣營」才會亮起來。');
   } else if (!known) {
-    say('', '先輸入你的名字報到，再按中間那顆「選擇陣營」。');
+    say('', '輸入好了，直接按中間那顆「選擇陣營」就可以抽。');
   } else {
     say('', '<b>' + me.name + '</b>，可以抽了。按中間那顆「選擇陣營」。<br>你有兩次機會：第一次可以留可以重抽，<b>第二次直接定案</b>。');
   }
@@ -778,15 +791,23 @@ function drawRadar(red, white) {
   function plot(list, color, side) {
     list.forEach(function (p) {
       var nm = p.name, h = hash(nm);
-      var ang = (h % 1000) / 1000 * Math.PI - Math.PI / 2 + (side === 'L' ? Math.PI : 0);
+      var isCmd = p.role === 'LEADER';
+      // 總指揮固定放在自己那半邊的正中央，一眼看得出來
+      var ang = isCmd ? (side === 'L' ? Math.PI : 0)
+                      : (h % 1000) / 1000 * Math.PI - Math.PI / 2 + (side === 'L' ? Math.PI : 0);
       // ⚠️ 一定要用 >>>（無號位移）。JS 的 >> 是有號的，雜湊值 ≥ 2^31 會變負數，
       //    sqrt(負數) = NaN，那個人的光點就被畫到左上角 (0,0) 去了。
       // 半徑開根號才會照面積均勻分布；直接線性會讓點全擠在圓心（50 人時很明顯）
-      var rad = 34 + Math.sqrt(((h >>> 10) % 1000) / 1000) * 100;
+      var rad = isCmd ? 74 : 34 + Math.sqrt(((h >>> 10) % 1000) / 1000) * 100;
       var x = 150 + Math.cos(ang) * rad, y = 150 + Math.sin(ang) * rad;
       var isMe = nm === myName;
-      P.push('<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (isMe ? 6 : 4) +
-             '" fill="' + color + '"' + (isMe ? ' stroke="#00eefc" stroke-width="2"' : '') + '/>');
+      var r = isCmd ? 9 : (isMe ? 6 : 4);
+      var delay = ((h >>> 4) % 2600) / 1000;          // 每顆的呼吸節奏錯開
+      P.push('<circle class="' + (isCmd ? 'cmd' : 'blip') + '" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) +
+             '" r="' + r + '" fill="' + color + '"' +
+             (isCmd ? ' stroke="#00eefc" stroke-width="2.5"'
+                    : (isMe ? ' stroke="#00eefc" stroke-width="2"' : '')) +
+             ' style="animation-delay:' + delay.toFixed(2) + 's"/>');
     });
   }
   plot(red, '#ff3b52', 'L');

@@ -122,15 +122,15 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
       </div>
     </section>
 
-    <!-- 隊長 -->
+    <!-- 總指揮 -->
     <section class="card">
-      <div class="lbl">兩位隊長（不參加抽籤，各佔自己隊伍一席）</div>
+      <div class="lbl">兩位總指揮（不參加抽籤，各佔自己隊伍一席）</div>
       <div class="row">
-        <input type="text" id="leadR" placeholder="豪火戰隊 隊長姓名" maxlength="20">
-        <input type="text" id="leadW" placeholder="榆你相遇 隊長姓名" maxlength="20">
+        <input type="text" id="leadR" placeholder="豪火戰隊 總指揮姓名" maxlength="20">
+        <input type="text" id="leadW" placeholder="榆你相遇隊 總指揮姓名" maxlength="20">
       </div>
-      <div class="row"><button class="btn btn-c" id="leadBtn">設定隊長並開始抽籤</button></div>
-      <div class="note">設好隊長就等於開始，同仁馬上可以抽。<b>姓名只存在試算表，不會進程式碼。</b></div>
+      <div class="row"><button class="btn btn-c" id="leadBtn">設定總指揮並開始抽籤</button></div>
+      <div class="note">設好總指揮就等於開始，同仁馬上可以抽。<b>姓名只存在試算表，不會進程式碼。</b></div>
     </section>
 
     <!-- 例外處理 -->
@@ -193,7 +193,7 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
     <section class="card">
       <div class="lbl" style="color:var(--danger)">危險區</div>
       <div class="row"><button class="btn btn-d" id="clearBtn">全部清空（重來一次）</button></div>
-      <div class="note bad">清空會刪掉所有人的抽籤結果，包含隊長。要按兩次確認。</div>
+      <div class="note bad">清空會刪掉所有人的抽籤結果，包含總指揮。要按兩次確認。</div>
     </section>
   </div>
 </main>
@@ -206,7 +206,7 @@ var API_READY = /^(https?:\/\/|\/)/.test(API);   // 佔位符不是網址，所�
 
 var TEAM = { RED: '豪火戰隊', WHITE: '榆你相遇隊' };
 // 角色顯示名稱要跟 roulette.html 的 ROLES 一致
-var ROLES = { ASSAULT: '突擊手', CANNON: '重炮手', SNIPER: '狙擊手', LEADER: '隊長' };
+var ROLES = { ASSAULT: '突擊手', CANNON: '重炮手', SNIPER: '狙擊手', LEADER: '總指揮' };
 var $ = function (id) { return document.getElementById(id); };
 var PW = '', poll = null, clearArmed = false, closeArmed = false;
 
@@ -238,7 +238,7 @@ function admin(cmd, extra) {
 }
 function say(kind, html) { var n = $('statusNote'); n.className = 'note ' + (kind || ''); n.innerHTML = html; }
 
-var PHASE_TXT = { CHECKIN: '尚未開始（先設隊長）', DRAW: '抽籤進行中', CLOSED: '已封盤' };
+var PHASE_TXT = { CHECKIN: '尚未開始（先設總指揮）', DRAW: '抽籤進行中', CLOSED: '已封盤' };
 
 function paint(d, phase) {
   $('phasePill').textContent = PHASE_TXT[phase] || phase;
@@ -268,7 +268,7 @@ function paint(d, phase) {
   (d.rows || []).forEach(function (r) {
     var tr = document.createElement('tr');
     var teamTag = r.team ? '<span class="tag ' + r.team + '">' + TEAM[r.team] + '</span>' : '<span class="tag un">未定</span>';
-    var st = r.status === 'LOCKED' ? (r.src === 'LEADER' ? '★ 隊長' : '已定案')
+    var st = r.status === 'LOCKED' ? (r.src === 'LEADER' ? '★ 總指揮' : '已定案')
            : r.status === 'PENDING' ? '<span class="tag pend">暫定</span>'
            : '<span class="tag un">還沒抽</span>';
     tr.innerHTML = '<td>' + esc(r.name) + '</td><td>' + teamTag + '</td>'
@@ -319,7 +319,7 @@ $('refreshBtn').onclick = function () { load(); };
 
 $('leadBtn').onclick = async function () {
   var rn = $('leadR').value.trim(), wn = $('leadW').value.trim();
-  if (!rn || !wn) { say('bad', '兩位隊長的姓名都要填。'); return; }
+  if (!rn || !wn) { say('bad', '兩位總指揮的姓名都要填。'); return; }
   if (!confirm('豪火戰隊：' + rn + '\n榆你相遇：' + wn + '\n\n設定之後同仁馬上可以開始抽，確定嗎？')) return;
   var r = await admin('setLeaders', { red: rn, white: wn });
   r.ok ? load() : say('bad', r.message);
@@ -364,7 +364,7 @@ $('clearBtn').onclick = async function () {
     setTimeout(function(){ clearArmed = false; $('clearBtn').textContent = '全部清空（重來一次）'; }, 6000); return; }
   clearArmed = false; this.textContent = '全部清空（重來一次）';
   var r = await admin('clearAll');
-  r.ok ? (say('warn', '已清空，回到「尚未開始」。要重新設定隊長。'), load()) : say('bad', r.message);
+  r.ok ? (say('warn', '已清空，回到「尚未開始」。要重新設定總指揮。'), load()) : say('bad', r.message);
 };
 
 if (!API_READY) {
