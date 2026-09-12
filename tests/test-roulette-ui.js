@@ -527,6 +527,45 @@ function backend(p) {
   await page.waitForFunction(() => document.getElementById('phasePill').textContent === '已封盤', null, { timeout: 8000 });
   eq(S.phase, 'CLOSED', '確認後封盤生效');
 
+  /* ── 10d. 名冊圖 ── */
+  section('10d. 產生名冊圖（長按存相簿）');
+  {
+    // 塞滿一點，看長圖撐不撐得住
+    for (let i = 0; i < 24; i++) {
+      S.rows.push({ name: '員' + String(i).padStart(2, '0'), dev: 'x' + i,
+        team: i % 2 ? 'WHITE' : 'RED', status: 'LOCKED', spins: 1, src: 'SELF',
+        role: ['ASSAULT', 'CANNON', 'SNIPER'][i % 3] });
+    }
+    await page.click('#refreshBtn');
+    await wait(1200);
+    eq(await page.$eval('#imgWrap', e => e.hidden), true, '還沒按之前不顯示圖');
+    await page.click('#imgBtn');
+    await page.waitForFunction(() => !document.getElementById('imgWrap').hidden, null, { timeout: 15000 });
+    const src = await page.$eval('#rosterImg', e => e.getAttribute('src'));
+    ok(/^data:image\/png;base64,/.test(src), '產出的是 PNG', src.slice(0, 30));
+    ok(src.length > 20000, '圖有實際內容，不是空白', String(src.length));
+    const h = Number(await page.$eval('#rosterImg', e => e.getAttribute('data-h')));
+    ok(h > 900, '人多的時候圖會跟著變長', h + 'px');
+    // 後端沒回設定時也要畫得出完整的圖（本機測試版曾經跑舊版、settings 回空物件）
+    const hNoCfg = await page.evaluate(() => {
+      const rows = [{ name: '甲甲甲', team: 'RED', status: 'LOCKED', src: 'LEADER', role: 'LEADER' },
+                    { name: '乙乙乙', team: 'WHITE', status: 'LOCKED', src: 'LEADER', role: 'LEADER' }];
+      return drawRoster(rows, {}).height;
+    });
+    ok(hNoCfg > 400, '設定是空的也畫得出來', hNoCfg + 'px');
+    const dl = await page.$eval('#imgDl', e => e.getAttribute('href'));
+    eq(dl, src, '下載連結指向同一張圖');
+    // 控制台本來就每 5 秒輪詢一次，所以不能用「總請求數」判斷。
+    // 改成驗：再按一次照樣產得出圖，而且圖是 data: URL（不需要再去伺服器拿）。
+    await page.click('#imgBtn');
+    await wait(2000);
+    const src2 = await page.$eval('#rosterImg', e => e.getAttribute('src'));
+    ok(/^data:image\/png;base64,/.test(src2), '再按一次照樣產得出圖');
+    ok(src2.length > 20000, '第二張也有內容');
+    // 清掉，不影響後面的測試
+    S.rows = S.rows.filter(r => !/^員\d\d$/.test(r.name));
+  }
+
   /* ── 10c. 在控制台改設定，同仁端跟著變 ── */
   section('10c. 控制台改隊名與姓名規則，不用動程式碼');
   {

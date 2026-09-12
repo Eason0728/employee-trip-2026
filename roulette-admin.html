@@ -155,6 +155,19 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
         <tbody id="rosterBody"></tbody></table>
     </section>
 
+    <!-- 名冊圖 -->
+    <section class="card">
+      <div class="lbl">名冊圖</div>
+      <div class="note" style="margin-top:.6rem">按下去在這台手機直接畫一張圖，
+        <b>長按圖片就能存到相簿</b>，要貼哪個群組自己決定。資料不會經過任何伺服器，沒網路也生得出來。</div>
+      <div class="row"><button class="btn btn-c" id="imgBtn">產生名冊圖</button></div>
+      <div id="imgWrap" hidden style="margin-top:.7rem">
+        <img id="rosterImg" alt="兩隊名冊" style="width:100%;border-radius:.5rem;border:1px solid var(--outline-2)">
+        <div class="note" style="margin-top:.5rem">長按上面的圖 → 儲存影像。
+          電腦上可以按 <a id="imgDl" href="#" download="分隊名冊.png" style="color:var(--cyan)">這裡下載</a>。</div>
+      </div>
+    </section>
+
     <!-- 現場可改的設定 -->
     <section class="card">
       <details id="cfgBox">
@@ -411,6 +424,99 @@ $('closeBtn').onclick = async function () {
     return;
   }
   say('bad', r.message);
+};
+
+/* ── 名冊圖：在這台裝置用 canvas 畫，不經過伺服器 ──
+   長按存相簿是手機上最可靠的取圖方式；download 屬性在 iOS Safari 常常沒反應。 */
+var IMG_W = 1080, ROW_H = 64;
+function drawRoster(rows, settings) {
+  var S = settings || {};
+  var ROLE = { ASSAULT: S.roleAssault || '突擊手', CANNON: S.roleCannon || '重炮手',
+               SNIPER: S.roleSniper || '狙擊手', LEADER: S.roleLeader || '總指揮' };
+  var teams = [
+    // 拿不到設定時也要畫得出完整的圖，所以每一欄都有預設值
+    { key: 'RED',   name: S.redName || '豪火戰隊',
+      cry: S.redCry || '火力全開——豪！不！留！情！',   c1: '#ff3b52', c2: '#ffb2bd' },
+    { key: 'WHITE', name: S.whiteName || '榆你相遇隊',
+      cry: S.whiteCry || '從從容容、游刃有餘；匆匆忙忙、連滾帶爬', c1: '#e9eef7', c2: '#8fa3c4' }
+  ];
+  teams.forEach(function (t) {
+    t.list = rows.filter(function (r) { return r.team === t.key && r.status === 'LOCKED'; });
+    t.list.sort(function (a, b) { return (a.src === 'LEADER' ? -1 : 0) - (b.src === 'LEADER' ? -1 : 0); });
+    t.rowsN = Math.ceil(t.list.length / 2);
+  });
+  var head = 200, blockHead = 190, foot = 90, gap = 40;
+  var H = head + foot + teams.reduce(function (a, t) { return a + blockHead + t.rowsN * ROW_H + gap; }, 0);
+
+  var cv = document.createElement('canvas');
+  cv.width = IMG_W; cv.height = H;
+  var g = cv.getContext('2d');
+  var F = '"PingFang TC","Heiti TC","Microsoft JhengHei",sans-serif';
+  g.fillStyle = '#0b0f19'; g.fillRect(0, 0, IMG_W, H);
+  g.strokeStyle = 'rgba(0,238,252,.07)'; g.lineWidth = 1;
+  for (var x = 0; x < IMG_W; x += 48) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+  for (var y = 0; y < H; y += 48) { g.beginPath(); g.moveTo(0, y); g.lineTo(IMG_W, y); g.stroke(); }
+
+  g.fillStyle = '#00eefc'; g.font = '600 26px ' + F;
+  g.fillText('SPLAT-HQ // 2026 員旅 · 獵鷹漆彈', 56, 76);
+  g.fillStyle = '#e3e1ef'; g.font = '800 62px ' + F;
+  g.fillText('分隊名冊', 56, 148);
+  var now = new Date();
+  function p2(n) { return (n < 10 ? '0' : '') + n; }
+  g.fillStyle = '#8ca3ba'; g.font = '400 24px ' + F;
+  g.fillText(now.getFullYear() + '/' + p2(now.getMonth() + 1) + '/' + p2(now.getDate()) + ' '
+    + p2(now.getHours()) + ':' + p2(now.getMinutes()) + ' 產生', 56, 184);
+
+  var top = head;
+  teams.forEach(function (t) {
+    g.fillStyle = t.c1; g.fillRect(56, top, 8, 56);
+    g.fillStyle = t.c2; g.font = '800 48px ' + F;
+    g.fillText(t.name, 84, top + 46);
+    g.fillStyle = '#8ca3ba'; g.font = '400 28px ' + F;
+    g.fillText(t.list.length + ' 名', IMG_W - 56 - g.measureText(t.list.length + ' 名').width, top + 44);
+    if (t.cry) { g.fillStyle = t.c2; g.font = '400 26px ' + F; g.fillText('隊呼：' + t.cry, 84, top + 92); }
+    var n = {};
+    t.list.forEach(function (r) { if (r.role && r.role !== 'LEADER') n[r.role] = (n[r.role] || 0) + 1; });
+    g.fillStyle = '#8ca3ba'; g.font = '400 26px ' + F;
+    g.fillText(['ASSAULT', 'CANNON', 'SNIPER'].map(function (k) {
+      return ROLE[k] + ' ' + (n[k] || 0); }).join('　·　'), 84, top + 136);
+
+    var ry = top + blockHead;
+    t.list.forEach(function (r, i) {
+      var col = i % 2, row = Math.floor(i / 2);
+      var cx = 56 + col * ((IMG_W - 112) / 2), cy = ry + row * ROW_H;
+      var isLead = r.role === 'LEADER';
+      g.fillStyle = isLead ? 'rgba(0,238,252,.10)' : 'rgba(28,35,51,.85)';
+      g.fillRect(cx, cy, (IMG_W - 112) / 2 - 16, ROW_H - 12);
+      g.strokeStyle = isLead ? '#00eefc' : '#2b3548';
+      g.strokeRect(cx + .5, cy + .5, (IMG_W - 112) / 2 - 17, ROW_H - 13);
+      g.fillStyle = '#e3e1ef'; g.font = '600 30px ' + F;
+      g.fillText((isLead ? '★ ' : '') + r.name, cx + 18, cy + 36);
+      g.fillStyle = isLead ? '#00eefc' : '#8ca3ba'; g.font = '400 24px ' + F;
+      var lbl = ROLE[r.role] || '待定';
+      g.fillText(lbl, cx + (IMG_W - 112) / 2 - 16 - 18 - g.measureText(lbl).width, cy + 36);
+    });
+    top += blockHead + t.rowsN * ROW_H + gap;
+  });
+
+  g.fillStyle = '#495a75'; g.font = '400 24px ' + F;
+  var tot = teams[0].list.length + teams[1].list.length;
+  g.fillText('共 ' + tot + ' 人　·　' + teams[0].name + ' ' + teams[0].list.length
+    + ' 對 ' + teams[1].name + ' ' + teams[1].list.length, 56, H - 44);
+  return cv;
+}
+$('imgBtn').onclick = async function () {
+  this.disabled = true; this.textContent = '產生中⋯';
+  var r = await admin('stats');
+  this.disabled = false; this.textContent = '產生名冊圖';
+  if (!r.ok) { say('bad', r.message || '讀不到名冊'); return; }
+  var cv = drawRoster(r.data.rows, r.data.settings);
+  var url = cv.toDataURL('image/png');
+  $('rosterImg').src = url;
+  $('rosterImg').setAttribute('data-h', String(cv.height));
+  $('imgDl').setAttribute('href', url);
+  $('imgWrap').hidden = false;
+  $('imgWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
 $('rebalanceBtn').onclick = async function () {
