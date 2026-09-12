@@ -241,8 +241,12 @@ function backend(p) {
   eq(await txt(page, '#phaseTag'), '抽籤進行中', '頁首顯示抽籤進行中');
   await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
 
+  // 按下去要「立刻」開始轉，不能等後端回來才動
   await page.click('#spinBtn');
+  const spinningNow = await page.$eval('#needle', e => e.classList.contains('spinning'));
+  eq(spinningNow, true, '一按下去指針就開始轉，不等後端');
   await page.waitForSelector('#mask:not([hidden])', { timeout: 15000 });
+  eq(await page.$eval('#needle', e => e.classList.contains('spinning')), false, '結果出來就停止空轉');
   const t1 = await txt(page, '#dlgTeam');
   ok(t1 === '豪火戰隊' || t1 === '榆你相遇隊', '第一次抽到的是兩隊之一', t1);
   ok((await txt(page, '#dlgTitle')).includes('尚未定案'), '第一次的標題寫「尚未定案」');
