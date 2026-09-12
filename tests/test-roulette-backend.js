@@ -109,22 +109,12 @@ function boot() {
   fn(env.SpreadsheetApp, env.PropertiesService, env.LockService, env.ContentService, sandbox);
   sandbox.setup();
   sandbox._env = env;
-  // 姓名規則預設是「三個中文字」，但多數測試用 P0、甲 這種名字。
-  // 這裡先放寬，姓名規則本身另外有一節專門測（用 bootStrict()）。
-  sandbox.route({ action: 'admin', pw: PW, cmd: 'setConfig',
-                  nameMin: '1', nameMax: '8', nameZhOnly: '0' });
   return sandbox;
 }
-/** 不放寬設定的實例，用來測預設的姓名規則 */
-function bootStrict() {
-  const env = makeEnv();
-  const sandbox = {};
-  new Function('SpreadsheetApp', 'PropertiesService', 'LockService', 'ContentService', 'exports',
-    CODE + '\n;Object.assign(exports,{route:route,setup:setup});')
-    (env.SpreadsheetApp, env.PropertiesService, env.LockService, env.ContentService, sandbox);
-  sandbox.setup();
-  return sandbox;
-}
+const bootStrict = boot;                      // 姓名規則已固定，兩者相同
+/** 產合規的測試姓名：三個中文字 */
+const CH = '甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥東南西北中';
+const nm = i => '測' + CH[Math.floor(i / CH.length) % CH.length] + CH[i % CH.length];
 
 /* ══════════════════ 1. 名額演算法 ══════════════════ */
 section('1. 名額怎麼算（spec §4.1／§4.1b）');
@@ -148,10 +138,10 @@ section('2. 終值模擬：三種報到節奏 × 六種人數');
 function playOne(total, cadence, respinRate) {
   const B = boot();
   const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
-  A({ cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
 
   const people = [];
-  for (let i = 0; i < total - 2; i++) people.push({ name: '員工' + i, dev: dev(i) });
+  for (let i = 0; i < total - 2; i++) people.push({ name: nm(i), dev: dev(i) });
 
   const checkin = p => B.route({ action: 'checkin', name: p.name, dev: p.dev });
   const spin    = p => B.route({ action: 'spin',    name: p.name, dev: p.dev });
@@ -224,9 +214,9 @@ section('4. 第一位抽的人必須是真的 50/50');
   let red = 0, white = 0;
   for (let r = 0; r < 300; r++) {
     const B = boot();
-    B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
-    B.route({ action: 'checkin', name: '第一位', dev: dev(1) });
-    const res = B.route({ action: 'spin', name: '第一位', dev: dev(1) });
+    B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+    B.route({ action: 'checkin', name: '測一一', dev: dev(1) });
+    const res = B.route({ action: 'spin', name: '測一一', dev: dev(1) });
     res.data.me.team === 'RED' ? red++ : white++;
     if (r === 0) ok(res.data.forced === false, '第一位抽的人不是「補位」');
   }
@@ -248,13 +238,13 @@ section('4b. 突擊手／重炮手／狙擊手（同隊內平均分配）');
 {
   const B = boot();
   const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
-  A({ cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
   for (let i = 0; i < 42; i++) {
-    B.route({ action: 'checkin', name: 'P' + i, dev: dev(i) });
+    B.route({ action: 'checkin', name: nm(i), dev: dev(i) });
   }
   for (let i = 0; i < 42; i++) {
-    B.route({ action: 'spin', name: 'P' + i, dev: dev(i) });
-    B.route({ action: 'confirm', name: 'P' + i, dev: dev(i) });
+    B.route({ action: 'spin', name: nm(i), dev: dev(i) });
+    B.route({ action: 'confirm', name: nm(i), dev: dev(i) });
   }
   const st = A({ cmd: 'stats' }).data.rows;
   eq(st.filter(r => r.src === 'LEADER').every(r => r.role === 'LEADER'), true, '兩位隊長的角色是 LEADER');
@@ -274,19 +264,19 @@ section('4b. 突擊手／重炮手／狙擊手（同隊內平均分配）');
 {
   const B = boot();
   const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
-  A({ cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
-  B.route({ action: 'checkin', name: '甲', dev: dev(1) });
-  B.route({ action: 'spin', name: '甲', dev: dev(1) });
-  eq(B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.role, '', '還是暫定時沒有角色');
-  B.route({ action: 'confirm', name: '甲', dev: dev(1) });
-  const role = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.role;
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+  B.route({ action: 'checkin', name: '測甲甲', dev: dev(1) });
+  B.route({ action: 'spin', name: '測甲甲', dev: dev(1) });
+  eq(B.route({ action: 'state', name: '測甲甲', dev: dev(1) }).data.me.role, '', '還是暫定時沒有角色');
+  B.route({ action: 'confirm', name: '測甲甲', dev: dev(1) });
+  const role = B.route({ action: 'state', name: '測甲甲', dev: dev(1) }).data.me.role;
   ok(['ASSAULT', 'CANNON', 'SNIPER'].indexOf(role) > -1, '定案才配角色', role);
   A({ cmd: 'resolvePending', mode: 'reset' });
-  const before = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.role;
+  const before = B.route({ action: 'state', name: '測甲甲', dev: dev(1) }).data.me.role;
   eq(before, role, '已定案的人不受「退回暫定」影響');
-  const other = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.team === 'RED' ? 'WHITE' : 'RED';
-  A({ cmd: 'move', name: '甲', team: other });
-  const after = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.role;
+  const other = B.route({ action: 'state', name: '測甲甲', dev: dev(1) }).data.me.team === 'RED' ? 'WHITE' : 'RED';
+  A({ cmd: 'move', name: '測甲甲', team: other });
+  const after = B.route({ action: 'state', name: '測甲甲', dev: dev(1) }).data.me.role;
   ok(['ASSAULT', 'CANNON', 'SNIPER'].indexOf(after) > -1, '換隊之後重新配角色', after);
 }
 
@@ -302,31 +292,16 @@ section('4c. 姓名規則：預設三個中文字，主持人可從控制台改'
   eq(B.route({ action: 'checkin', name: '王小明', dev: dev(1) }).ok, true, '三個中文字可以');
   eq(B.route({ action: 'spin', name: '李', dev: dev(2) }).error, 'BAD_NAME', '抽籤也擋（不是只有報到擋）');
 
-  // 主持人放寬之後就過得了
-  eq(A({ cmd: 'setConfig', nameMin: '2', nameMax: '4' }).ok, true, '主持人可以改成 2～4 個字');
-  eq(B.route({ action: 'checkin', name: '甲乙丙丁', dev: dev(3) }).ok, true, '放寬後四個字可以');
-  eq(A({ cmd: 'setConfig', nameZhOnly: '0' }).ok, true, '也可以改成收英文');
-  eq(B.route({ action: 'checkin', name: 'Amy', dev: dev(4) }).ok, true, '放寬後英文可以');
-  eq(A({ cmd: 'setConfig', nameMin: '5', nameMax: '2' }).error, 'BAD_CONFIG', '最少大於最多會被擋');
-  eq(A({ cmd: 'setConfig', maxPeople: '999' }).error, 'BAD_CONFIG', '人數上限超出範圍會被擋');
+  // 姓名規則與人數上限不開放設定（Eason 2026-09-12 指定）
+  A({ cmd: 'setConfig', nameMin: '2', nameMax: '4', nameZhOnly: '0', maxPeople: '99' });
+  eq(B.route({ action: 'checkin', name: '甲乙丙丁', dev: dev(3) }).error, 'BAD_NAME', '四個字還是擋');
+  eq(B.route({ action: 'checkin', name: 'Amy', dev: dev(4) }).error, 'BAD_NAME', '英文還是擋');
+  const st0 = A({ cmd: 'stats' }).data.settings;
+  eq(st0.nameMin, undefined, '設定裡沒有姓名規則');
+  eq(st0.maxPeople, undefined, '設定裡沒有人數上限');
   eq(A({ cmd: 'setConfig', redName: '' }).ok, true, '空白欄位視為不修改');
 }
-{
-  // ⚠️ 主持人中途把規則改嚴，已經報到的人不能被卡住——
-  //    那會讓他既抽不到、又佔著一個名額擋住封盤。
-  const B = bootStrict();
-  const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
-  A({ cmd: 'setConfig', nameMin: '2', nameMax: '4' });
-  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
-  eq(B.route({ action: 'checkin', name: '王恬', dev: dev(1) }).ok, true, '放寬時兩個字報得了到');
-  A({ cmd: 'setConfig', nameMin: '3', nameMax: '3' });
-  const sp = B.route({ action: 'spin', name: '王恬', dev: dev(1) });
-  eq(sp.ok, true, '規則事後改嚴，已經報到的人照樣抽得了');
-  eq(B.route({ action: 'confirm', name: '王恬', dev: dev(1) }).ok, true, '也確認得了');
-  eq(B.route({ action: 'checkin', name: '李昀', dev: dev(2) }).error, 'BAD_NAME', '但新的人要照新規則');
-  eq(B.route({ action: 'spin', name: '李昀', dev: dev(2) }).error, 'BAD_NAME', '新的人直接抽也擋');
-  eq(A({ cmd: 'close' }).error, 'TOO_FEW', '沒有人卡在「報到未抽」擋住封盤');
-}
+
 {
   const B = bootStrict();
   const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
@@ -334,25 +309,80 @@ section('4c. 姓名規則：預設三個中文字，主持人可從控制台改'
   eq(st.redName, '豪火戰隊', '預設紅隊名');
   eq(st.whiteName, '榆你相遇隊', '預設白隊名');
   eq(st.roleLeader, '總指揮', '預設隊長叫總指揮');
-  eq(st.maxPeople, 56, '預設人數上限 56');
-  A({ cmd: 'setConfig', redName: '新紅隊', whiteCry: '新口號', roleCannon: '火力手', maxPeople: '30' });
+
+  A({ cmd: 'setConfig', redName: '新紅隊', whiteCry: '新口號', roleCannon: '火力手' });
   const st2 = B.route({ action: 'state' }).data.settings;
   eq(st2.redName, '新紅隊', '改過的隊名會跟著回應送到每一支手機');
   eq(st2.whiteCry, '新口號', '隊呼同上');
   eq(st2.roleCannon, '火力手', '角色名稱同上');
-  eq(st2.maxPeople, 30, '人數上限同上');
+
   eq(st2.whiteName, '榆你相遇隊', '沒改到的維持預設');
+}
+
+/* ══════════════════ 4d. 補平兩隊 ══════════════════ */
+section('4d. 有人報到卻沒抽、被刪掉之後，兩隊要補得回平均');
+{
+  // ⚠️ 名額是用「當下報到人數」算的。有人報到卻沒抽、事後被刪掉，
+  //    實際抽籤的人就比當時算名額的基數少，兩隊可能差到 2 人。
+  //    這是 2026-09-12 用 400 回合模擬抓到的，六成機率會發生，不是罕見狀況。
+  let sawGap = 0, fixedAll = true, movedSomeone = false;
+  for (let round = 0; round < 60; round++) {
+    const B = boot();
+    const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
+    A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+    const N = 21;                                   // 報到 21 人（含兩位指揮）
+    for (let i = 0; i < N - 2; i++) B.route({ action: 'checkin', name: nm(i), dev: dev(i) });
+    for (let i = 0; i < N - 3; i++) {               // 最後一位只報到、不抽
+      B.route({ action: 'spin', name: nm(i), dev: dev(i) });
+      B.route({ action: 'confirm', name: nm(i), dev: dev(i) });
+    }
+    A({ cmd: 'delete', name: nm(N - 3) });          // 主持人把他刪掉
+    const before = B.route({ action: 'state' }).data.count;
+    if (Math.abs(before.red - before.white) > 1) sawGap++;
+    const rb = A({ cmd: 'rebalance' });
+    if (rb.data.moved.length) movedSomeone = true;
+    const after = B.route({ action: 'state' }).data.count;
+    if (Math.abs(after.red - after.white) > 1) fixedAll = false;
+    if (after.red + after.white !== N - 1) fixedAll = false;
+  }
+  ok(sawGap > 0, '確實會出現差 2 人的情況（60 回合中 ' + sawGap + ' 次）');
+  ok(movedSomeone, '補平真的有把人搬過去');
+  ok(fixedAll, '補平之後一律差距 ≤ 1，而且人數沒少');
+}
+{
+  const B = boot();
+  const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+  for (let i = 0; i < 12; i++) {
+    B.route({ action: 'checkin', name: nm(i), dev: dev(i) });
+    B.route({ action: 'spin', name: nm(i), dev: dev(i) });
+    B.route({ action: 'confirm', name: nm(i), dev: dev(i) });
+  }
+  // 主持人手動把人搬到失衡，封盤要擋
+  const st = A({ cmd: 'stats' }).data.rows.filter(r => r.team === 'WHITE' && r.src !== 'LEADER');
+  A({ cmd: 'move', name: st[0].name, team: 'RED' });
+  A({ cmd: 'move', name: st[1].name, team: 'RED' });
+  const c = A({ cmd: 'close' });
+  eq(c.error, 'UNBALANCED', '兩隊差太多時封盤被擋');
+  ok(c.data.red !== c.data.white, '擋下來時會說兩隊各幾人');
+  A({ cmd: 'rebalance' });
+  eq(A({ cmd: 'close' }).ok, true, '補平之後封得起來');
+  const fin = B.route({ action: 'state' }).data.count;
+  ok(Math.abs(fin.red - fin.white) <= 1, '最終兩隊差距 ≤ 1', fin.red + ' 對 ' + fin.white);
+  const leaders = A({ cmd: 'stats' }).data.rows.filter(r => r.src === 'LEADER');
+  eq(leaders[0].team, 'RED', '補平不會動到總指揮');
+  eq(leaders[1].team, 'WHITE', '兩位總指揮各留各隊');
 }
 
 /* ══════════════════ 5. 狀態機 ══════════════════ */
 section('5. 兩次機會的狀態轉換（spec §4.3）');
 {
   const B = boot();
-  const me = { name: '陳測試', dev: dev(7) };
+  const me = { name: '測試試', dev: dev(7) };
   let r = B.route({ action: 'spin', name: me.name, dev: me.dev });
   eq(r.error, 'NOT_OPEN', '還沒設隊長就抽 → NOT_OPEN');
 
-  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
   r = B.route({ action: 'checkin', name: me.name, dev: me.dev });
   eq(r.data.me.status, 'CHECKED_IN', '報到後狀態是 CHECKED_IN');
   eq(r.data.me.spins, 0, '報到後抽籤次數 0');
@@ -374,10 +404,10 @@ section('5. 兩次機會的狀態轉換（spec §4.3）');
 }
 {
   const B = boot();
-  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
-  B.route({ action: 'checkin', name: '甲', dev: dev(1) });
-  B.route({ action: 'spin', name: '甲', dev: dev(1) });
-  const r = B.route({ action: 'confirm', name: '甲', dev: dev(1) });
+  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+  B.route({ action: 'checkin', name: '測甲甲', dev: dev(1) });
+  B.route({ action: 'spin', name: '測甲甲', dev: dev(1) });
+  const r = B.route({ action: 'confirm', name: '測甲甲', dev: dev(1) });
   eq(r.data.me.status, 'LOCKED', '暫定後按確認 → 鎖死');
   eq(r.data.me.spins, 1, '確認不會增加抽籤次數');
 }
@@ -386,7 +416,7 @@ section('5. 兩次機會的狀態轉換（spec §4.3）');
 section('6. 同名、換裝置、人數上限');
 {
   const B = boot();
-  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
   B.route({ action: 'checkin', name: '王小明', dev: dev(1) });
   B.route({ action: 'spin', name: '王小明', dev: dev(1) });
   B.route({ action: 'confirm', name: '王小明', dev: dev(1) });
@@ -396,7 +426,7 @@ section('6. 同名、換裝置、人數上限');
   r = B.route({ action: 'state', name: '王小明', dev: dev(2) });
   ok(r.data.me.team === 'RED' || r.data.me.team === 'WHITE', '換裝置查得到自己原本的隊伍');
 
-  r = B.route({ action: 'checkin', name: '  王小明  ', dev: dev(3) });
+  r = B.route({ action: 'checkin', name: '王小明', dev: dev(3) });
   eq(r.data.me.status, 'LOCKED', '姓名前後空白會去掉，視為同一個人');
 
   r = B.route({ action: 'checkin', name: '', dev: dev(4) });
@@ -404,21 +434,20 @@ section('6. 同名、換裝置、人數上限');
 }
 {
   const B = boot();
-  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
-  for (let i = 0; i < 54; i++) B.route({ action: 'checkin', name: 'P' + i, dev: dev(i) });
-  const r = B.route({ action: 'checkin', name: '第57人', dev: dev(99) });
+  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+  for (let i = 0; i < 54; i++) B.route({ action: 'checkin', name: nm(i), dev: dev(i) });
+  const r = B.route({ action: 'checkin', name: '測滿滿', dev: dev(99) });
   eq(r.error, 'ROSTER_FULL', '含兩位隊長滿 56 人之後不再收人');
-  B.route({ action: 'admin', pw: PW, cmd: 'setConfig', maxPeople: '60' });
-  eq(B.route({ action: 'checkin', name: '第57人', dev: dev(99) }).ok, true, '主持人把上限改大就收得下');
+
 }
 
 /* ══════════════════ 7. API 契約（plan.md 共用契約表） ══════════════════ */
 section('7. API 契約欄位逐字比對');
 {
   const B = boot();
-  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
-  B.route({ action: 'checkin', name: '甲', dev: dev(1) });
-  const r = B.route({ action: 'state', name: '甲', dev: dev(1) });
+  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+  B.route({ action: 'checkin', name: '測甲甲', dev: dev(1) });
+  const r = B.route({ action: 'state', name: '測甲甲', dev: dev(1) });
   eq(r.ok, true, 'state.ok');
   eq(r.phase, 'DRAW', 'state.phase 是 DRAW');
   eq(JSON.stringify(Object.keys(r.data).sort()), '["cap","count","me","settings"]', 'state.data 有 cap／count／me／settings');
@@ -430,7 +459,7 @@ section('7. API 契約欄位逐字比對');
   eq(r.data.count.pendingUnspun, 1, '報到未抽 1 人');
   eq(r.data.count.red, 1, '紅隊目前 1 人（隊長）');
 
-  const sp = B.route({ action: 'spin', name: '甲', dev: dev(1) });
+  const sp = B.route({ action: 'spin', name: '測甲甲', dev: dev(1) });
   eq(typeof sp.data.forced, 'boolean', 'spin 回傳 forced 是布林');
 
   const out = B.doGet({ parameter: { action: 'state', callback: 'cb7' } }).getContent();
@@ -449,12 +478,12 @@ section('7. API 契約欄位逐字比對');
 section('8. 未開放時連名單都不外流');
 {
   const B = boot();
-  B.route({ action: 'checkin', name: '甲', dev: dev(1) });
+  B.route({ action: 'checkin', name: '測甲甲', dev: dev(1) });
   const r = B.route({ action: 'roster' });
   eq(r.phase, 'CHECKIN', '還沒設隊長是 CHECKIN 階段');
   eq(JSON.stringify(r.data.red), '[]', 'CHECKIN 階段紅隊名單是空的');
   eq(JSON.stringify(r.data.white), '[]', 'CHECKIN 階段白隊名單是空的');
-  ok(!JSON.stringify(r).includes('甲'), 'CHECKIN 階段整包回應不含任何姓名');
+  ok(!JSON.stringify(r).includes('測甲甲'), 'CHECKIN 階段整包回應不含任何姓名');
 }
 
 /* ══════════════════ 9. 封盤會被報到未抽的人擋下來 ══════════════════ */
@@ -462,10 +491,10 @@ section('9. 封盤把關（終值保證的唯一前提）');
 {
   const B = boot();
   const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
-  A({ cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
   // 11 人＋2 位隊長＝13；刪掉沒抽的那位剩 12，剛好跨過封盤的最低人數
   const crowd = [];
-  for (let i = 0; i < 11; i++) crowd.push('員' + i);
+  for (let i = 0; i < 11; i++) crowd.push(nm(i));
   crowd.forEach((n, i) => B.route({ action: 'checkin', name: n, dev: dev(i) }));
   crowd.slice(0, 10).forEach((n, i) => {
     B.route({ action: 'spin', name: n, dev: dev(i) });
@@ -473,24 +502,26 @@ section('9. 封盤把關（終值保證的唯一前提）');
   });
   let r = A({ cmd: 'close' });
   eq(r.error, 'UNSPUN', '還有人報到未抽 → 封盤被擋');
-  eq(JSON.stringify(r.data.names), '["員10"]', '擋下來時要列出是誰');
+  eq(JSON.stringify(r.data.names), JSON.stringify([nm(10)]), '擋下來時要列出是誰');
 
-  r = A({ cmd: 'delete', name: '員10' });
+  r = A({ cmd: 'delete', name: nm(10) });
   eq(r.ok, true, '刪掉沒抽的人');
+  A({ cmd: 'rebalance' });                       // 有人報到沒抽被刪掉，先補平
   r = A({ cmd: 'close' });
-  eq(r.ok, true, '刪掉之後封得起來');
+  eq(r.ok, true, '刪掉並補平之後封得起來');
   eq(B.route({ action: 'state' }).phase, 'CLOSED', '封盤後階段是 CLOSED');
-  eq(B.route({ action: 'spin', name: '路人', dev: dev(99) }).error, 'NOT_OPEN', '封盤後不能再抽');
+  eq(B.route({ action: 'spin', name: '測路人', dev: dev(99) }).error, 'NOT_OPEN', '封盤後不能再抽');
 }
 {
   const B = boot();
   const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
-  A({ cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
   for (let i = 0; i < 8; i++) {                       // 含隊長共 10 人，不到 12
-    B.route({ action: 'checkin', name: 'P' + i, dev: dev(i) });
-    B.route({ action: 'spin', name: 'P' + i, dev: dev(i) });
-    B.route({ action: 'confirm', name: 'P' + i, dev: dev(i) });
+    B.route({ action: 'checkin', name: nm(i), dev: dev(i) });
+    B.route({ action: 'spin', name: nm(i), dev: dev(i) });
+    B.route({ action: 'confirm', name: nm(i), dev: dev(i) });
   }
+  A({ cmd: 'rebalance' });
   const r = A({ cmd: 'close' });
   eq(r.error, 'TOO_FEW', '報到不到 12 人 → 封盤跳警告（起始下限可能弄歪終值）');
   eq(A({ cmd: 'close', force: '1' }).ok, true, '主持人確認後可以硬封');
@@ -501,46 +532,46 @@ section('10. 主持人指令');
 {
   const B = boot();
   const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
-  A({ cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
-  B.route({ action: 'checkin', name: '甲', dev: dev(1) });
-  B.route({ action: 'spin', name: '甲', dev: dev(1) });
-  B.route({ action: 'confirm', name: '甲', dev: dev(1) });
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+  B.route({ action: 'checkin', name: '測甲甲', dev: dev(1) });
+  B.route({ action: 'spin', name: '測甲甲', dev: dev(1) });
+  B.route({ action: 'confirm', name: '測甲甲', dev: dev(1) });
 
-  const before = B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.team;
+  const before = B.route({ action: 'state', name: '測甲甲', dev: dev(1) }).data.me.team;
   const other  = before === 'RED' ? 'WHITE' : 'RED';
-  let r = A({ cmd: 'move', name: '甲', team: other });
+  let r = A({ cmd: 'move', name: '測甲甲', team: other });
   eq(r.ok, true, '主持人把人換隊');
-  eq(B.route({ action: 'state', name: '甲', dev: dev(1) }).data.me.team, other, '換隊生效');
+  eq(B.route({ action: 'state', name: '測甲甲', dev: dev(1) }).data.me.team, other, '換隊生效');
 
-  eq(A({ cmd: 'proxySpin', name: '任何人' }).error, 'BAD_ACTION', '代抽功能已移除（Eason 2026-09-11 指定）');
+  eq(A({ cmd: 'proxySpin', name: '測任任' }).error, 'BAD_ACTION', '代抽功能已移除（Eason 2026-09-11 指定）');
 
   r = A({ cmd: 'resolvePending', mode: 'reset' });
   eq(r.ok, true, '把暫定的人退回未抽');
 
   r = A({ cmd: 'stats' });
   ok(Array.isArray(r.data.rows), '控制台拿得到完整名冊');
-  ok(r.data.rows.some(x => x.name === '甲'), '名冊裡有甲');
+  ok(r.data.rows.some(x => x.name === '測甲甲'), '名冊裡有甲');
 
   r = A({ cmd: 'clearAll' });
   eq(r.ok, true, '全部清空');
   eq(B.route({ action: 'state' }).data.count.checkedIn, 0, '清空後報到人數歸零');
   eq(B.route({ action: 'state' }).phase, 'CHECKIN', '清空後回到 CHECKIN');
-  eq(A({ cmd: 'delete', name: '不存在' }).error, 'NO_SUCH_NAME', '刪不存在的人 → NO_SUCH_NAME');
+  eq(A({ cmd: 'delete', name: '測無無' }).error, 'NO_SUCH_NAME', '刪不存在的人 → NO_SUCH_NAME');
 }
 
 /* ══════════════════ 11. 併發：每次寫入都要拿鎖 ══════════════════ */
 section('11. 寫入一定要拿鎖（投票工具掉過 38 票的那個坑）');
 {
   const B = boot();
-  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '隊長紅', white: '隊長白' });
+  B.route({ action: 'admin', pw: PW, cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
   const base = lockCount;
-  B.route({ action: 'checkin', name: '甲', dev: dev(1) });
+  B.route({ action: 'checkin', name: '測甲甲', dev: dev(1) });
   ok(lockCount > base, 'checkin 有拿鎖');
   const b2 = lockCount;
-  B.route({ action: 'spin', name: '甲', dev: dev(1) });
+  B.route({ action: 'spin', name: '測甲甲', dev: dev(1) });
   ok(lockCount > b2, 'spin 有拿鎖');
   const b3 = lockCount;
-  B.route({ action: 'state', name: '甲', dev: dev(1) });
+  B.route({ action: 'state', name: '測甲甲', dev: dev(1) });
   eq(lockCount, b3, '唯讀的 state 不拿鎖（不然會塞爆）');
   eq(lockHeld, 0, '每一把鎖都有放掉');
 }

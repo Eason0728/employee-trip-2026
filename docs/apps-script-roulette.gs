@@ -24,6 +24,8 @@ var HEAD_E  = ['時間', '姓名', '動作', '結果', '裝置'];
 
 var CAP_FLOOR   = 6;    // 起始名額下限，見 spec §4.1b（開頭幾位才有真隨機可抽）
 var MIN_CLOSE   = 12;   // 報到不到這個數就封盤，起始下限可能弄歪終值 → 要主持人確認
+var MAX_PEOPLE  = 56;   // 含兩位總指揮。不開放設定（Eason 2026-09-12 指定）
+var NAME_LEN    = 3;    // 姓名固定三個中文字。不開放設定（同上）
 
 /**
  * 現場可改的設定。存在指令碼屬性，主持人在控制台就能改，不必動程式碼——
@@ -34,9 +36,7 @@ function defaultSettings() {
   return {
     redName: '豪火戰隊',  redCry: '火力全開——豪！不！留！情！',
     whiteName: '榆你相遇隊', whiteCry: '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
-    roleAssault: '突擊手', roleCannon: '重炮手', roleSniper: '狙擊手', roleLeader: '總指揮',
-    nameMin: 3, nameMax: 3, nameZhOnly: true,
-    maxPeople: 56                                   // 含兩位總指揮
+    roleAssault: '突擊手', roleCannon: '重炮手', roleSniper: '狙擊手', roleLeader: '總指揮'
   };
 }
 var _cfg = null;
@@ -50,15 +50,14 @@ function cfg() {
   _cfg = d;
   return d;
 }
-/** 姓名合不合規。前端也有一份一樣的檢查，這裡是最後一道。 */
+/**
+ * 姓名合不合規。**固定三個中文字，不開放設定**（Eason 2026-09-12 指定）。
+ * 前端也有一份一樣的檢查，這裡是最後一道。
+ */
 function nameProblem(n) {
-  var c = cfg();
   if (!n) return '請輸入你的名字';
-  if (c.nameZhOnly && !/^[\u4e00-\u9fff]+$/.test(n)) return '請只輸入中文字';
-  if (n.length < c.nameMin || n.length > c.nameMax) {
-    return c.nameMin === c.nameMax ? '請輸入 ' + c.nameMin + ' 個中文字'
-                                   : '請輸入 ' + c.nameMin + '～' + c.nameMax + ' 個中文字';
-  }
+  if (!/^[\u4e00-\u9fff]+$/.test(n)) return '請只輸入中文字';
+  if (n.length !== NAME_LEN) return '請輸入 ' + NAME_LEN + ' 個中文字';
   return '';
 }
 
@@ -289,7 +288,7 @@ function apiCheckin(p) {
     if (findByName(rows, name)) return snapshot(rows, { name: name, dev: p.dev });
     var bad = nameProblem(name);
     if (bad) return err('BAD_NAME', bad);
-    if (rows.length >= cfg().maxPeople) return err('ROSTER_FULL', '人數已經滿了（上限 ' + cfg().maxPeople + ' 人）');
+    if (rows.length >= MAX_PEOPLE) return err('ROSTER_FULL', '人數已經滿了（上限 ' + MAX_PEOPLE + ' 人）');
     appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
     rows.push({ row: rows.length + 2, name: name, dev: String(p.dev || ''),
                 team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF', role: '' });
@@ -323,7 +322,7 @@ function apiSpin(p) {
       //    就被卡在半路抽不了——那會讓他既抽不到、又佔著一個名額擋住封盤。
       var badName = nameProblem(name);
       if (badName) return err('BAD_NAME', badName);
-      if (rows.length >= cfg().maxPeople) return err('ROSTER_FULL', '人數已經滿了（上限 ' + cfg().maxPeople + ' 人）');
+      if (rows.length >= MAX_PEOPLE) return err('ROSTER_FULL', '人數已經滿了（上限 ' + MAX_PEOPLE + ' 人）');
       appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
       logEvent(name, 'CHECKIN', '', p.dev);
       me = { row: rows.length + 2, name: name, dev: String(p.dev || ''),
@@ -408,22 +407,12 @@ function apiAdmin(p) {
   if (cmd === 'setConfig') {
     var cur = cfg(), next = {}, k;
     for (k in cur) next[k] = cur[k];
-    var NUM = { nameMin: [1, 8], nameMax: [1, 8], maxPeople: [2, 200] };
+    // 只開放隊名、隊呼、角色名稱。姓名規則與人數上限刻意不開放（Eason 2026-09-12 指定）
     for (k in cur) {
       if (p[k] == null || p[k] === '') continue;
-      if (NUM[k]) {
-        var v = parseInt(p[k], 10);
-        if (isNaN(v) || v < NUM[k][0] || v > NUM[k][1]) return err('BAD_CONFIG', k + ' 超出範圍');
-        next[k] = v;
-      } else if (k === 'nameZhOnly') {
-        next[k] = (String(p[k]) === '1' || String(p[k]) === 'true');
-      } else {
-        next[k] = cleanName(p[k]).slice(0, 30);
-        if (!next[k]) return err('BAD_CONFIG', k + ' 不能空白');
-      }
+      next[k] = cleanName(p[k]).slice(0, 30);
+      if (!next[k]) return err('BAD_CONFIG', k + ' 不能空白');
     }
-    if (String(p.nameZhOnly) === '0' || String(p.nameZhOnly) === 'false') next.nameZhOnly = false;
-    if (next.nameMin > next.nameMax) return err('BAD_CONFIG', '姓名最少字數不能大於最多字數');
     props().setProperty('SETTINGS', JSON.stringify(next));
     _cfg = null;
     return okRes({ settings: cfg() });
@@ -456,6 +445,11 @@ function apiAdmin(p) {
       var unspun = [];
       for (var i = 0; i < rows.length; i++) if (rows[i].status === 'CHECKED_IN') unspun.push(rows[i].name);
       if (unspun.length) return err('UNSPUN', '還有人報到了沒抽，先讓他抽完或把他刪掉', { names: unspun });
+      var cc = counts(rows);
+      if (Math.abs(cc.red - cc.white) > 1 && String(p.force || '') !== '1') {
+        return err('UNBALANCED', '兩隊差了 ' + Math.abs(cc.red - cc.white) + ' 人，先按「補平兩隊」',
+                   { red: cc.red, white: cc.white });
+      }
       if (rows.length < MIN_CLOSE && String(p.force || '') !== '1') {
         return err('TOO_FEW', '報到不到 ' + MIN_CLOSE + ' 人，起始名額下限可能讓兩隊不平均，確認要封嗎', { count: rows.length });
       }
@@ -503,6 +497,32 @@ function apiAdmin(p) {
         writeRow(r); n++;
       }
       return snapshot(readRoster(), {}, { affected: n });
+    }
+
+    if (cmd === 'rebalance') {
+      // ⚠️ 為什麼需要這顆：名額是用「當下報到人數」算的。有人報到卻沒抽、
+      //    之後被刪掉，實際抽籤的人就比當時算名額的基數少，兩隊可能差到 2 人。
+      //    這裡把差距壓回 1 以內，動的是**最後定案的那幾位**（不動總指揮）。
+      var cb = counts(rows);
+      var moved = [];
+      while (Math.abs(cb.red - cb.white) > 1) {
+        var from = cb.red > cb.white ? 'RED' : 'WHITE';
+        var to   = from === 'RED' ? 'WHITE' : 'RED';
+        var pick = null;
+        for (var q = 0; q < rows.length; q++) {
+          var rq = rows[q];
+          if (rq.team !== from || rq.src === 'LEADER' || rq.status !== 'LOCKED') continue;
+          if (!pick || String(rq.checkedAt || '') >= String(pick.checkedAt || '')) pick = rq;
+        }
+        if (!pick) break;
+        pick.team = to;
+        pick.role = pickRole(rows, to);
+        writeRow(pick);
+        logEvent(pick.name, 'REBALANCE', to, '');
+        moved.push(pick.name);
+        cb = counts(rows);
+      }
+      return snapshot(rows, {}, { moved: moved });
     }
 
     if (cmd === 'fixRoles') {           // 加「角色」欄位之前就定案的人，補配一次

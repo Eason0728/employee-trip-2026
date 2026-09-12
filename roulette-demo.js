@@ -16,7 +16,7 @@
   var SETTINGS = { redName: '豪火戰隊', redCry: '火力全開——豪！不！留！情！',
     whiteName: '榆你相遇隊', whiteCry: '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
     roleAssault: '突擊手', roleCannon: '重炮手', roleSniper: '狙擊手', roleLeader: '總指揮',
-    nameMin: 3, nameMax: 3, nameZhOnly: true, maxPeople: 56 };
+    };
   var ROLE_KEYS = ['ASSAULT', 'CANNON', 'SNIPER'];
 
   function load() {

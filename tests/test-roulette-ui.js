@@ -38,8 +38,7 @@ function pickRole(rows, team) {
 }
 const DEFAULT_SETTINGS = { redName: '豪火戰隊', redCry: '火力全開——豪！不！留！情！',
   whiteName: '榆你相遇隊', whiteCry: '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
-  roleAssault: '突擊手', roleCannon: '重炮手', roleSniper: '狙擊手', roleLeader: '總指揮',
-  nameMin: 3, nameMax: 3, nameZhOnly: true, maxPeople: 56 };
+  roleAssault: '突擊手', roleCannon: '重炮手', roleSniper: '狙擊手', roleLeader: '總指揮' };
 function newState() { return { phase: 'CHECKIN', rows: [], settings: { ...DEFAULT_SETTINGS } }; }
 let S = newState();
 const hits = [];                                   // 記錄每一次請求，用來驗「同仁端不輪詢」
@@ -141,13 +140,28 @@ function backend(p) {
     }
     if (p.cmd === 'setConfig') {
       for (const k in S.settings) if (p[k] != null && p[k] !== '') S.settings[k] = p[k];
-      if (p.nameZhOnly != null) S.settings.nameZhOnly = p.nameZhOnly === '1';
       return { ok: true, phase: S.phase, data: { settings: S.settings } };
+    }
+    if (p.cmd === 'rebalance') {
+      const moved = [];
+      let cc = counts(S.rows);
+      while (Math.abs(cc.red - cc.white) > 1) {
+        const from = cc.red > cc.white ? 'RED' : 'WHITE';
+        const pick = S.rows.filter(r => r.team === from && r.src !== 'LEADER' && r.status === 'LOCKED').pop();
+        if (!pick) break;
+        pick.team = from === 'RED' ? 'WHITE' : 'RED';
+        pick.role = pickRole(S.rows, pick.team);
+        moved.push(pick.name); cc = counts(S.rows);
+      }
+      return snap({}, { moved });
     }
     if (p.cmd === 'open') { S.phase = 'DRAW'; return snap({}); }
     if (p.cmd === 'close') {
       const un = S.rows.filter(x => x.status === 'CHECKED_IN').map(x => x.name);
       if (un.length) return bad('UNSPUN', '還有人報到了沒抽', { names: un });
+      const cu = counts(S.rows);
+      if (Math.abs(cu.red - cu.white) > 1 && p.force !== '1')
+        return bad('UNBALANCED', '兩隊差太多', { red: cu.red, white: cu.white });
       if (S.rows.length < 12 && p.force !== '1') return bad('TOO_FEW', '報到不到 12 人', { count: S.rows.length });
       S.rows.forEach(x => { if (x.status === 'PENDING') { x.status = 'LOCKED'; if (!x.role) x.role = pickRole(S.rows, x.team); } });
       S.phase = 'CLOSED'; return snap({});
@@ -205,7 +219,7 @@ function backend(p) {
 
   // 沒輸入名字就不該按得下去。原本是按鈕活的、按了只跳紅字，看起來像「沒名字也能啟動」
   S.phase = 'DRAW';
-  await page.click('#reloadBtn');
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
     null, { timeout: 9000 });
   eq(await page.$eval('#spinBtn', e => e.disabled), true, '抽籤開放了，但沒打名字時轉盤是死的');
@@ -228,7 +242,7 @@ function backend(p) {
   await page.waitForFunction(() => document.getElementById('checkinBtn').disabled, null, { timeout: 5000 });
   eq(S.rows.length, 0, '整段過程後端一筆資料都沒產生');
   S.phase = 'CHECKIN';
-  await page.click('#reloadBtn');
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '尚未開始',
     null, { timeout: 9000 });
   // 裝置編號還在（識別身分要用），只是不再印在畫面上——Eason 2026-09-11 要求拿掉
@@ -279,7 +293,7 @@ function backend(p) {
   S.rows.unshift({ name: '白隊長', dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
   S.rows.unshift({ name: '紅隊長', dev: '', team: 'RED', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
   S.phase = 'DRAW';
-  await page.click('#reloadBtn');
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
     null, { timeout: 9000 });
   eq(await txt(page, '#phaseTag'), '抽籤進行中', '頁首顯示抽籤進行中');
@@ -433,15 +447,16 @@ function backend(p) {
   });
 
   /* ── 7b. 重新整理按鈕要看得出來有反應 ── */
-  section('7b. 重新整理按鈕');
+  section('7b. 重新整理名冊按鈕');
   {
-    await page.click('#tab0');
-    const before = await txt(page, '#reloadBtn');
-    await page.click('#reloadBtn');
-    await page.waitForFunction(() => /已更新 \d\d:\d\d:\d\d/.test(document.getElementById('reloadBtn').textContent),
+    eq(await page.$eval('body', e => e.querySelector('#reloadBtn') === null), true,
+       '轉盤頁沒有「重新整理戰況」（Eason 2026-09-12 要求拿掉）');
+    const before = await txt(page, '#reloadBtn2');
+    await page.click('#reloadBtn2');
+    await page.waitForFunction(() => /已更新 \d\d:\d\d:\d\d/.test(document.getElementById('reloadBtn2').textContent),
       null, { timeout: 15000 });
     ok(true, '按下去會顯示「已更新 時:分:秒」，不會看起來像死的');
-    await page.waitForFunction(t => document.getElementById('reloadBtn').textContent === t, before, { timeout: 9000 });
+    await page.waitForFunction(t => document.getElementById('reloadBtn2').textContent === t, before, { timeout: 9000 });
     ok(true, '幾秒後文字自己變回來');
   }
 
@@ -517,11 +532,9 @@ function backend(p) {
   {
     await page.click('#cfgBox summary');
     eq(await page.$eval('#cRedName', e => e.value), '豪火戰隊', '面板回填目前的隊名');
-    eq(await page.$eval('#cNameMin', e => e.value), '3', '面板回填目前的姓名規則');
+
     await page.fill('#cRedName', '烈焰隊');
     await page.fill('#cRedCry', '燒起來');
-    await page.fill('#cNameMin', '2');
-    await page.fill('#cNameMax', '4');
     await page.click('#cfgSaveBtn');
     // ⚠️ 成功訊息要顯示在設定面板裡。放在狀態列會被接著跑的 load() 一瞬間蓋掉。
     await page.waitForFunction(() => {
@@ -531,7 +544,10 @@ function backend(p) {
     await wait(1200);
     eq(await page.$eval('#cfgNote', e => e.hidden), false, '成功訊息不會被狀態列重畫蓋掉');
     eq(S.settings.redName, '烈焰隊', '後端存下新隊名');
-    eq(S.settings.nameMin, '2', '後端存下新的姓名規則');
+    eq(await page.$eval('#cfgBox', e => e.querySelector('#cNameMin') === null), true,
+       '面板沒有姓名規則欄位（刻意不開放）');
+    eq(await page.$eval('#cfgBox', e => e.querySelector('#cMaxPeople') === null), true,
+       '面板沒有人數上限欄位（刻意不開放）');
 
     // 同仁端重新整理就套用
     const c4 = await browser.newContext({ timezoneId: 'Asia/Taipei', viewport: { width: 390, height: 844 } });
@@ -549,15 +565,11 @@ function backend(p) {
     ok(names.every(n => n === '烈焰隊'), '同仁端的隊名全部換掉了', JSON.stringify(names));
     const cry = await p4.$eval('.teamcard.RED .cry', e => e.textContent);
     eq(cry, '隊呼：燒起來', '隊呼也換掉了');
-    eq(await p4.$eval('#nameInput', e => e.maxLength), 4, '姓名字數上限跟著變');
-    await p4.fill('#nameInput', '兩個');
-    await wait(300);
-    eq(await p4.$eval('#checkinBtn', e => e.disabled), false, '放寬後兩個字也能報到');
+    eq(await p4.$eval('#nameInput', e => e.maxLength), 3, '姓名還是固定三個字');
     await c4.close();
     // 改回去，免得影響後面的測試
     await page.fill('#cRedName', '豪火戰隊');
     await page.fill('#cRedCry', '火力全開——豪！不！留！情！');
-    await page.fill('#cNameMin', '3'); await page.fill('#cNameMax', '3');
     await page.click('#cfgSaveBtn');
     await wait(1200);
   }

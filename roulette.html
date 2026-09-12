@@ -366,7 +366,6 @@ nav.tabs button[aria-selected=true]{color:var(--cyan);box-shadow:inset 0 2px 0 v
     </div>
 
     <div class="note" id="note">正在連線⋯</div>
-    <button class="btn btn-g btn-wide" id="reloadBtn">重新整理戰況</button>
   </section>
 
   <!-- ════ 戰報頁 ════ -->
@@ -472,10 +471,7 @@ var CONFIG = {
   spinMs:        5000,   // 按下去之後轉盤總共轉幾毫秒
   settleMs:      1100,   // 最後減速停住要花幾毫秒（算在 spinMs 裡面）
   adminHref:     'roulette-admin.html',              // 左上角標題連到哪（主持人入口）
-  // 姓名限制。有同仁的名字不是三個字時，把 nameMin 改 2、nameMax 改 4 就好。
-  nameMin:       3,
-  nameMax:       3,
-  nameZhOnly:    true                                // 只收中文字
+  nameLen:       3          // 姓名固定三個中文字（後端也擋，不開放設定）
 };
 /* ⚠️ 貼到 LINE 的那張分享卡片不吃這裡的設定——它讀的是 <head> 裡的 og: 標籤。
    改隊名不影響卡片（卡片文案沒提隊名）；要換卡片的圖就重出 roulette-share.png。 */
@@ -507,9 +503,6 @@ function applySettings(st) {
   if (st.roleCannon)  ROLES.CANNON  = st.roleCannon;
   if (st.roleSniper)  ROLES.SNIPER  = st.roleSniper;
   if (st.roleLeader)  ROLES.LEADER  = st.roleLeader;
-  if (st.nameMin) CONFIG.nameMin = st.nameMin;
-  if (st.nameMax) CONFIG.nameMax = st.nameMax;
-  if (st.nameZhOnly != null) CONFIG.nameZhOnly = !!st.nameZhOnly;
   paintStatic();
 }
 /** 把 TEAM／CONFIG 寫進畫面上那些固定不動的地方 */
@@ -521,11 +514,8 @@ function paintStatic() {
     el.textContent = '隊呼：' + TEAM[el.getAttribute('data-cry')].cry;
   });
   var box = $('nameInput');
-  box.setAttribute('maxlength', String(CONFIG.nameMax));
-  box.setAttribute('placeholder', CONFIG.nameMin === CONFIG.nameMax
-    ? '請輸入' + ['', '一', '二', '三', '四', '五', '六', '七', '八'][CONFIG.nameMin] + '個中文字'
-    : '請輸入 ' + CONFIG.nameMin + '～' + CONFIG.nameMax + ' 個中文字');
-  $('charTag').textContent = box.value.length + '/' + CONFIG.nameMax;
+  box.setAttribute('maxlength', String(CONFIG.nameLen));
+  $('charTag').textContent = box.value.length + '/' + CONFIG.nameLen;
 }
 
 /* 先用預設值畫一次；後端回應回來時 applySettings() 會再蓋一次 */
@@ -535,15 +525,11 @@ function paintStatic() {
   $('adminLink').setAttribute('href', CONFIG.adminHref);
 })();
 function typedName() { return (($('nameInput').value || myName) || '').trim(); }
-/** 姓名格式：預設限定三個中文字。規則在上面的 CONFIG，改那裡就好。 */
+/** 姓名格式：固定三個中文字。後端也擋一次，兩邊規則一樣。 */
 function nameError(n) {
   if (!n) return '請輸入你的名字。';
-  if (CONFIG.nameZhOnly && !/^[\u4e00-\u9fff]+$/.test(n)) return '請只輸入中文字。';
-  if (n.length < CONFIG.nameMin || n.length > CONFIG.nameMax) {
-    return CONFIG.nameMin === CONFIG.nameMax
-      ? '請輸入' + CONFIG.nameMin + '個中文字。'
-      : '請輸入 ' + CONFIG.nameMin + '～' + CONFIG.nameMax + ' 個中文字。';
-  }
+  if (!/^[\u4e00-\u9fff]+$/.test(n)) return '請只輸入中文字。';
+  if (n.length !== CONFIG.nameLen) return '請輸入' + CONFIG.nameLen + '個中文字。';
   return '';
 }
 function hasName() { return typedName().length > 0 && !nameError(typedName()); }
@@ -583,7 +569,7 @@ function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^=
 })();
 
 $('nameInput').addEventListener('input', function () {
-  $('charTag').textContent = this.value.length + '/' + CONFIG.nameMax;
+  $('charTag').textContent = this.value.length + '/' + CONFIG.nameLen;
   render();                      // 打滿字數，報到鈕就活過來
 });
 
@@ -685,7 +671,7 @@ function render() {
   } else if (!hasName()) {
     var typed = ($('nameInput').value || '').trim();
     say(typed ? 'warn' : '', '第一步：在上面輸入你的名字。'
-      + (typed ? '<br>' + nameError(typed) : '（' + CONFIG.nameMin + ' 個中文字）'));
+      + (typed ? '<br>' + nameError(typed) : '（' + CONFIG.nameLen + ' 個中文字）'));
   } else if (!known) {
     say('', '第二步：按右邊的「報到」。報到之後中間那顆「選擇陣營」才會亮起來。');
   } else {
@@ -978,7 +964,6 @@ async function reloadWith(btn) {
   clearTimeout(btn._t);
   btn._t = setTimeout(function () { btn.textContent = original; }, 4000);
 }
-$('reloadBtn').onclick = function () { reloadWith(this); };
 $('reloadBtn2').onclick = function () { reloadWith(this); };
 
 /* ── 起手 ── */
