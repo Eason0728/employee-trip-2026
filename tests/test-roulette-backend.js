@@ -109,6 +109,20 @@ function boot() {
   fn(env.SpreadsheetApp, env.PropertiesService, env.LockService, env.ContentService, sandbox);
   sandbox.setup();
   sandbox._env = env;
+  // 姓名規則預設是「三個中文字」，但多數測試用 P0、甲 這種名字。
+  // 這裡先放寬，姓名規則本身另外有一節專門測（用 bootStrict()）。
+  sandbox.route({ action: 'admin', pw: PW, cmd: 'setConfig',
+                  nameMin: '1', nameMax: '8', nameZhOnly: '0' });
+  return sandbox;
+}
+/** 不放寬設定的實例，用來測預設的姓名規則 */
+function bootStrict() {
+  const env = makeEnv();
+  const sandbox = {};
+  new Function('SpreadsheetApp', 'PropertiesService', 'LockService', 'ContentService', 'exports',
+    CODE + '\n;Object.assign(exports,{route:route,setup:setup});')
+    (env.SpreadsheetApp, env.PropertiesService, env.LockService, env.ContentService, sandbox);
+  sandbox.setup();
   return sandbox;
 }
 
@@ -276,6 +290,44 @@ section('4b. 突擊手／重炮手／狙擊手（同隊內平均分配）');
   ok(['ASSAULT', 'CANNON', 'SNIPER'].indexOf(after) > -1, '換隊之後重新配角色', after);
 }
 
+/* ══════════════════ 4c. 姓名規則（後端是最後一道） ══════════════════ */
+section('4c. 姓名規則：預設三個中文字，主持人可從控制台改');
+{
+  const B = bootStrict();
+  const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+  eq(B.route({ action: 'checkin', name: '甲', dev: dev(1) }).error, 'BAD_NAME', '一個字擋掉');
+  eq(B.route({ action: 'checkin', name: '甲乙丙丁', dev: dev(1) }).error, 'BAD_NAME', '四個字擋掉');
+  eq(B.route({ action: 'checkin', name: 'abc', dev: dev(1) }).error, 'BAD_NAME', '英文擋掉');
+  eq(B.route({ action: 'checkin', name: '王小明', dev: dev(1) }).ok, true, '三個中文字可以');
+  eq(B.route({ action: 'spin', name: '李', dev: dev(2) }).error, 'BAD_NAME', '抽籤也擋（不是只有報到擋）');
+
+  // 主持人放寬之後就過得了
+  eq(A({ cmd: 'setConfig', nameMin: '2', nameMax: '4' }).ok, true, '主持人可以改成 2～4 個字');
+  eq(B.route({ action: 'checkin', name: '甲乙丙丁', dev: dev(3) }).ok, true, '放寬後四個字可以');
+  eq(A({ cmd: 'setConfig', nameZhOnly: '0' }).ok, true, '也可以改成收英文');
+  eq(B.route({ action: 'checkin', name: 'Amy', dev: dev(4) }).ok, true, '放寬後英文可以');
+  eq(A({ cmd: 'setConfig', nameMin: '5', nameMax: '2' }).error, 'BAD_CONFIG', '最少大於最多會被擋');
+  eq(A({ cmd: 'setConfig', maxPeople: '999' }).error, 'BAD_CONFIG', '人數上限超出範圍會被擋');
+  eq(A({ cmd: 'setConfig', redName: '' }).ok, true, '空白欄位視為不修改');
+}
+{
+  const B = bootStrict();
+  const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
+  const st = A({ cmd: 'stats' }).data.settings;
+  eq(st.redName, '豪火戰隊', '預設紅隊名');
+  eq(st.whiteName, '榆你相遇隊', '預設白隊名');
+  eq(st.roleLeader, '總指揮', '預設隊長叫總指揮');
+  eq(st.maxPeople, 56, '預設人數上限 56');
+  A({ cmd: 'setConfig', redName: '新紅隊', whiteCry: '新口號', roleCannon: '火力手', maxPeople: '30' });
+  const st2 = B.route({ action: 'state' }).data.settings;
+  eq(st2.redName, '新紅隊', '改過的隊名會跟著回應送到每一支手機');
+  eq(st2.whiteCry, '新口號', '隊呼同上');
+  eq(st2.roleCannon, '火力手', '角色名稱同上');
+  eq(st2.maxPeople, 30, '人數上限同上');
+  eq(st2.whiteName, '榆你相遇隊', '沒改到的維持預設');
+}
+
 /* ══════════════════ 5. 狀態機 ══════════════════ */
 section('5. 兩次機會的狀態轉換（spec §4.3）');
 {
@@ -340,6 +392,8 @@ section('6. 同名、換裝置、人數上限');
   for (let i = 0; i < 54; i++) B.route({ action: 'checkin', name: 'P' + i, dev: dev(i) });
   const r = B.route({ action: 'checkin', name: '第57人', dev: dev(99) });
   eq(r.error, 'ROSTER_FULL', '含兩位隊長滿 56 人之後不再收人');
+  B.route({ action: 'admin', pw: PW, cmd: 'setConfig', maxPeople: '60' });
+  eq(B.route({ action: 'checkin', name: '第57人', dev: dev(99) }).ok, true, '主持人把上限改大就收得下');
 }
 
 /* ══════════════════ 7. API 契約（plan.md 共用契約表） ══════════════════ */
@@ -351,7 +405,7 @@ section('7. API 契約欄位逐字比對');
   const r = B.route({ action: 'state', name: '甲', dev: dev(1) });
   eq(r.ok, true, 'state.ok');
   eq(r.phase, 'DRAW', 'state.phase 是 DRAW');
-  eq(JSON.stringify(Object.keys(r.data).sort()), '["cap","count","me"]', 'state.data 只有 cap／count／me');
+  eq(JSON.stringify(Object.keys(r.data).sort()), '["cap","count","me","settings"]', 'state.data 有 cap／count／me／settings');
   eq(JSON.stringify(Object.keys(r.data.me).sort()), '["name","role","spins","status","team"]', 'me 的欄位');
   eq(JSON.stringify(Object.keys(r.data.count).sort()),
      '["checkedIn","pendingUnspun","red","white"]', 'count 的欄位');

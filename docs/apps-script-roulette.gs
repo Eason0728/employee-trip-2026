@@ -23,8 +23,44 @@ var HEAD_R  = ['報到時間', '姓名', '裝置編號', '隊伍', '狀態', '�
 var HEAD_E  = ['時間', '姓名', '動作', '結果', '裝置'];
 
 var CAP_FLOOR   = 6;    // 起始名額下限，見 spec §4.1b（開頭幾位才有真隨機可抽）
-var MAX_PEOPLE  = 56;   // 含兩位隊長
 var MIN_CLOSE   = 12;   // 報到不到這個數就封盤，起始下限可能弄歪終值 → 要主持人確認
+
+/**
+ * 現場可改的設定。存在指令碼屬性，主持人在控制台就能改，不必動程式碼——
+ * 員旅那兩天 Eason 只有手機，改程式碼對他來說等於做不到。
+ * 這裡只放「當天真的可能要改」的東西；演算法相關的常數留在上面不開放。
+ */
+function defaultSettings() {
+  return {
+    redName: '豪火戰隊',  redCry: '火力全開——豪！不！留！情！',
+    whiteName: '榆你相遇隊', whiteCry: '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
+    roleAssault: '突擊手', roleCannon: '重炮手', roleSniper: '狙擊手', roleLeader: '總指揮',
+    nameMin: 3, nameMax: 3, nameZhOnly: true,
+    maxPeople: 56                                   // 含兩位總指揮
+  };
+}
+var _cfg = null;
+function cfg() {
+  if (_cfg) return _cfg;
+  var d = defaultSettings();
+  try {
+    var raw = props().getProperty('SETTINGS');
+    if (raw) { var o = JSON.parse(raw); for (var k in d) if (o[k] != null) d[k] = o[k]; }
+  } catch (e) {}
+  _cfg = d;
+  return d;
+}
+/** 姓名合不合規。前端也有一份一樣的檢查，這裡是最後一道。 */
+function nameProblem(n) {
+  var c = cfg();
+  if (!n) return '請輸入你的名字';
+  if (c.nameZhOnly && !/^[\u4e00-\u9fff]+$/.test(n)) return '請只輸入中文字';
+  if (n.length < c.nameMin || n.length > c.nameMax) {
+    return c.nameMin === c.nameMax ? '請輸入 ' + c.nameMin + ' 個中文字'
+                                   : '請輸入 ' + c.nameMin + '～' + c.nameMax + ' 個中文字';
+  }
+  return '';
+}
 
 // 鎖要等多久。⚠️ 2026-09-11 壓測：54 支手機同時送，30 秒等不到的一律回 BUSY，
 // 結果 163 個請求全是 HTTP 200、只有 26 筆真的進去。鎖裡面每少一次試算表往返，
@@ -236,7 +272,8 @@ function meOf(rows, p) {
  *  那是鎖裡面最貴的一次試算表往返，54 個人排隊時會直接把鎖等爆。 */
 function snapshot(rows, p, extra) {
   var cnt = counts(rows);
-  var data = { me: meOf(rows, p), count: cnt, cap: caps(cnt.checkedIn, cnt.red, cnt.white) };
+  var data = { me: meOf(rows, p), count: cnt, cap: caps(cnt.checkedIn, cnt.red, cnt.white),
+               settings: cfg() };
   if (extra) for (var k in extra) data[k] = extra[k];
   return okRes(data);
 }
@@ -245,12 +282,12 @@ function apiState(p) { return snapshot(readRoster(), p); }
 
 function apiCheckin(p) {
   var name = cleanName(p.name);
-  if (!name) return err('BAD_NAME', '請先輸入姓名');
-  if (name.length > 20) return err('BAD_NAME', '姓名太長了');
+  var bad = nameProblem(name);
+  if (bad) return err('BAD_NAME', bad);
   return withLock(function () {
     var rows = readRoster();
     if (findByName(rows, name)) return snapshot(rows, { name: name, dev: p.dev });
-    if (rows.length >= MAX_PEOPLE) return err('ROSTER_FULL', '人數已經滿了（上限 ' + MAX_PEOPLE + ' 人）');
+    if (rows.length >= cfg().maxPeople) return err('ROSTER_FULL', '人數已經滿了（上限 ' + cfg().maxPeople + ' 人）');
     appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
     rows.push({ row: rows.length + 2, name: name, dev: String(p.dev || ''),
                 team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF', role: '' });
@@ -270,7 +307,8 @@ function gateBlocked(checkedIn) {
 
 function apiSpin(p) {
   var name = cleanName(p.name);
-  if (!name) return err('BAD_NAME', '請先輸入姓名');
+  var badName = nameProblem(name);
+  if (badName) return err('BAD_NAME', badName);
   if (getPhase() !== 'DRAW') return err('NOT_OPEN', '現在還不能抽');
 
   return withLock(function () {
@@ -280,7 +318,7 @@ function apiSpin(p) {
 
     var me = findByName(rows, name);
     if (!me) {
-      if (rows.length >= MAX_PEOPLE) return err('ROSTER_FULL', '人數已經滿了（上限 ' + MAX_PEOPLE + ' 人）');
+      if (rows.length >= cfg().maxPeople) return err('ROSTER_FULL', '人數已經滿了（上限 ' + cfg().maxPeople + ' 人）');
       appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
       logEvent(name, 'CHECKIN', '', p.dev);
       me = { row: rows.length + 2, name: name, dev: String(p.dev || ''),
@@ -337,7 +375,7 @@ function apiRoster(p) {
     }
   }
   return okRes({ red: red, white: white, me: meOf(rows, p), count: cnt,
-                 cap: caps(cnt.checkedIn, cnt.red, cnt.white) });
+                 cap: caps(cnt.checkedIn, cnt.red, cnt.white), settings: cfg() });
 }
 
 /* ════════════ 主持人 API ════════════ */
@@ -355,10 +393,35 @@ function apiAdmin(p) {
     return okRes({
       rows: out, count: cnt, cap: caps(cnt.checkedIn, cnt.red, cnt.white),
       leaders: { red: props().getProperty('LEADER_RED') || '', white: props().getProperty('LEADER_WHITE') || '' },
+      settings: cfg(),
       // 手機上如果網頁出狀況，可以直接開試算表看原始資料
       sheetUrl: 'https://docs.google.com/spreadsheets/d/' + props().getProperty('SS_ID') + '/edit',
       gate: { openAt: props().getProperty('OPEN_AT') || '', openMin: props().getProperty('OPEN_MIN') || '' }
     });
+  }
+
+  if (cmd === 'setConfig') {
+    var cur = cfg(), next = {}, k;
+    for (k in cur) next[k] = cur[k];
+    var NUM = { nameMin: [1, 8], nameMax: [1, 8], maxPeople: [2, 200] };
+    for (k in cur) {
+      if (p[k] == null || p[k] === '') continue;
+      if (NUM[k]) {
+        var v = parseInt(p[k], 10);
+        if (isNaN(v) || v < NUM[k][0] || v > NUM[k][1]) return err('BAD_CONFIG', k + ' 超出範圍');
+        next[k] = v;
+      } else if (k === 'nameZhOnly') {
+        next[k] = (String(p[k]) === '1' || String(p[k]) === 'true');
+      } else {
+        next[k] = cleanName(p[k]).slice(0, 30);
+        if (!next[k]) return err('BAD_CONFIG', k + ' 不能空白');
+      }
+    }
+    if (String(p.nameZhOnly) === '0' || String(p.nameZhOnly) === 'false') next.nameZhOnly = false;
+    if (next.nameMin > next.nameMax) return err('BAD_CONFIG', '姓名最少字數不能大於最多字數');
+    props().setProperty('SETTINGS', JSON.stringify(next));
+    _cfg = null;
+    return okRes({ settings: cfg() });
   }
 
   if (cmd === 'setGate') {

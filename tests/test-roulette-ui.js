@@ -36,7 +36,11 @@ function pickRole(rows, team) {
   const pool = ROLE_KEYS.filter(k => n[k] === lo);
   return pool[Math.floor(Math.random() * pool.length)];
 }
-function newState() { return { phase: 'CHECKIN', rows: [] }; }
+const DEFAULT_SETTINGS = { redName: '豪火戰隊', redCry: '火力全開——豪！不！留！情！',
+  whiteName: '榆你相遇隊', whiteCry: '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
+  roleAssault: '突擊手', roleCannon: '重炮手', roleSniper: '狙擊手', roleLeader: '總指揮',
+  nameMin: 3, nameMax: 3, nameZhOnly: true, maxPeople: 56 };
+function newState() { return { phase: 'CHECKIN', rows: [], settings: { ...DEFAULT_SETTINGS } }; }
 let S = newState();
 const hits = [];                                   // 記錄每一次請求，用來驗「同仁端不輪詢」
 let truncateNextSpin = false;                      // 模擬「資料寫進去了、但回應沒回到手機」
@@ -71,7 +75,8 @@ function meOf(rows, p) {
 }
 function snap(p, extra) {
   const c = counts(S.rows);
-  const d = Object.assign({ me: meOf(S.rows, p), count: c, cap: caps(c.checkedIn, c.red, c.white) }, extra || {});
+  const d = Object.assign({ me: meOf(S.rows, p), count: c, cap: caps(c.checkedIn, c.red, c.white),
+    settings: S.settings }, extra || {});
   return { ok: true, phase: S.phase, data: d };
 }
 const bad = (code, msg, data) => Object.assign({ ok: false, phase: S.phase, error: code, message: msg }, data ? { data } : {});
@@ -88,7 +93,7 @@ function backend(p) {
     });
     const c = counts(S.rows);
     return { ok: true, phase: S.phase, data: { red, white, me: meOf(S.rows, p), count: c,
-             cap: caps(c.checkedIn, c.red, c.white) } };
+             cap: caps(c.checkedIn, c.red, c.white), settings: S.settings } };
   }
   if (p.action === 'checkin') {
     if (!n) return bad('BAD_NAME', '請先輸入姓名');
@@ -126,13 +131,18 @@ function backend(p) {
     if (p.cmd === 'stats') return { ok: true, phase: S.phase, data: {
       rows: S.rows.map(x => ({ name: x.name, team: x.team, status: x.status, spins: x.spins, src: x.src, role: x.role || '' })),
       count: c, cap: caps(c.checkedIn, c.red, c.white),
-      leaders: { red: '', white: '' }, gate: { openAt: '', openMin: '' },
+      leaders: { red: '', white: '' }, gate: { openAt: '', openMin: '' }, settings: S.settings,
       sheetUrl: 'https://docs.google.com/spreadsheets/d/TESTSHEET/edit' } };
     if (p.cmd === 'setLeaders') {
       S.rows = S.rows.filter(x => x.src !== 'LEADER');
       S.rows.unshift({ name: p.white, dev: '', team: 'WHITE', status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
       S.rows.unshift({ name: p.red,   dev: '', team: 'RED',   status: 'LOCKED', spins: 0, src: 'LEADER', role: 'LEADER' });
       S.phase = 'DRAW'; return snap({});
+    }
+    if (p.cmd === 'setConfig') {
+      for (const k in S.settings) if (p[k] != null && p[k] !== '') S.settings[k] = p[k];
+      if (p.nameZhOnly != null) S.settings.nameZhOnly = p.nameZhOnly === '1';
+      return { ok: true, phase: S.phase, data: { settings: S.settings } };
     }
     if (p.cmd === 'open') { S.phase = 'DRAW'; return snap({}); }
     if (p.cmd === 'close') {
@@ -501,6 +511,56 @@ function backend(p) {
   await page.click('#closeBtn');
   await page.waitForFunction(() => document.getElementById('phasePill').textContent === '已封盤', null, { timeout: 8000 });
   eq(S.phase, 'CLOSED', '確認後封盤生效');
+
+  /* ── 10c. 在控制台改設定，同仁端跟著變 ── */
+  section('10c. 控制台改隊名與姓名規則，不用動程式碼');
+  {
+    await page.click('#cfgBox summary');
+    eq(await page.$eval('#cRedName', e => e.value), '豪火戰隊', '面板回填目前的隊名');
+    eq(await page.$eval('#cNameMin', e => e.value), '3', '面板回填目前的姓名規則');
+    await page.fill('#cRedName', '烈焰隊');
+    await page.fill('#cRedCry', '燒起來');
+    await page.fill('#cNameMin', '2');
+    await page.fill('#cNameMax', '4');
+    await page.click('#cfgSaveBtn');
+    // ⚠️ 成功訊息要顯示在設定面板裡。放在狀態列會被接著跑的 load() 一瞬間蓋掉。
+    await page.waitForFunction(() => {
+      const n = document.getElementById('cfgNote');
+      return !n.hidden && n.textContent.includes('設定已更新');
+    }, null, { timeout: 9000 });
+    await wait(1200);
+    eq(await page.$eval('#cfgNote', e => e.hidden), false, '成功訊息不會被狀態列重畫蓋掉');
+    eq(S.settings.redName, '烈焰隊', '後端存下新隊名');
+    eq(S.settings.nameMin, '2', '後端存下新的姓名規則');
+
+    // 同仁端重新整理就套用
+    const c4 = await browser.newContext({ timezoneId: 'Asia/Taipei', viewport: { width: 390, height: 844 } });
+    const p4 = await c4.newPage();
+    await p4.route('**/script.google.com/**', route => {
+      const u = new URL(route.request().url());
+      const q = {}; u.searchParams.forEach((v, k) => { q[k] = v; });
+      route.fulfill({ status: 200, contentType: 'application/javascript',
+                      body: q.callback + '(' + JSON.stringify(backend(q)) + ');' });
+    });
+    await p4.addInitScript(a => { window.ROULETTE_API = a; }, API);
+    await p4.goto(HOST + '/roulette.html', { waitUntil: 'domcontentloaded' });
+    await wait(1600);
+    const names = await p4.$$eval('[data-team="RED"]', es => es.map(e => e.textContent));
+    ok(names.every(n => n === '烈焰隊'), '同仁端的隊名全部換掉了', JSON.stringify(names));
+    const cry = await p4.$eval('.teamcard.RED .cry', e => e.textContent);
+    eq(cry, '隊呼：燒起來', '隊呼也換掉了');
+    eq(await p4.$eval('#nameInput', e => e.maxLength), 4, '姓名字數上限跟著變');
+    await p4.fill('#nameInput', '兩個');
+    await wait(300);
+    eq(await p4.$eval('#checkinBtn', e => e.disabled), false, '放寬後兩個字也能報到');
+    await c4.close();
+    // 改回去，免得影響後面的測試
+    await page.fill('#cRedName', '豪火戰隊');
+    await page.fill('#cRedCry', '火力全開——豪！不！留！情！');
+    await page.fill('#cNameMin', '3'); await page.fill('#cNameMax', '3');
+    await page.click('#cfgSaveBtn');
+    await wait(1200);
+  }
 
   /* ── 10b. 封盤之後的退路 ── */
   section('10b. 手滑封盤救得回來（員旅當天只有手機）');

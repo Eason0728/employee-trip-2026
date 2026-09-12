@@ -151,6 +151,46 @@ td .btn{padding:.28rem .5rem;font-size:.6875rem}
         <tbody id="rosterBody"></tbody></table>
     </section>
 
+    <!-- 現場可改的設定 -->
+    <section class="card">
+      <details id="cfgBox">
+        <summary class="lbl" style="cursor:pointer;list-style:none">現場可改的設定（點開）</summary>
+        <div class="note" style="margin-top:.7rem">改完按最下面的「儲存設定」。
+          同仁那邊<b>重新整理就套用</b>，不用重開網頁。已經抽到的人不受影響。</div>
+
+        <div class="lbl" style="margin-top:.9rem">隊名與隊呼</div>
+        <div class="row"><input type="text" id="cRedName" placeholder="紅隊隊名" maxlength="30"></div>
+        <div class="row"><input type="text" id="cRedCry" placeholder="紅隊隊呼" maxlength="30"></div>
+        <div class="row"><input type="text" id="cWhiteName" placeholder="白隊隊名" maxlength="30"></div>
+        <div class="row"><input type="text" id="cWhiteCry" placeholder="白隊隊呼" maxlength="30"></div>
+
+        <div class="lbl" style="margin-top:.9rem">角色名稱</div>
+        <div class="row">
+          <input type="text" id="cRoleAssault" placeholder="角色一" maxlength="10">
+          <input type="text" id="cRoleCannon" placeholder="角色二" maxlength="10">
+          <input type="text" id="cRoleSniper" placeholder="角色三" maxlength="10">
+        </div>
+        <div class="row"><input type="text" id="cRoleLeader" placeholder="隊長的稱呼" maxlength="10"></div>
+
+        <div class="lbl" style="margin-top:.9rem">姓名規則</div>
+        <div class="row">
+          <input type="number" id="cNameMin" placeholder="最少幾個字" min="1" max="8">
+          <input type="number" id="cNameMax" placeholder="最多幾個字" min="1" max="8">
+          <select id="cNameZh">
+            <option value="1">只收中文字</option>
+            <option value="0">中英文都收</option>
+          </select>
+        </div>
+        <div class="note">名字不是三個字的同仁報不了到，就把這裡放寬，例如最少 2、最多 4。</div>
+
+        <div class="lbl" style="margin-top:.9rem">人數上限（含兩位總指揮）</div>
+        <div class="row"><input type="number" id="cMaxPeople" min="2" max="200"></div>
+
+        <div class="row"><button class="btn btn-c" id="cfgSaveBtn">儲存設定</button></div>
+        <div class="note" id="cfgNote" hidden></div>
+      </details>
+    </section>
+
     <!-- 出狀況怎麼辦 -->
     <section class="card">
       <details>
@@ -246,6 +286,7 @@ function paint(d, phase) {
   $('openBtn').hidden = phase !== 'CLOSED';           // 封盤之後才出現，就是那條退路
   $('closeBtn').hidden = phase === 'CLOSED';
   if (d.sheetUrl) $('sheetLink').setAttribute('href', d.sheetUrl);
+  if (d.settings) fillConfig(d.settings);
   $('capPill').textContent = '名額 ' + d.cap.red + ' 對 ' + d.cap.white;
   $('sRed').textContent = d.count.red;
   $('sWhite').textContent = d.count.white;
@@ -323,6 +364,33 @@ $('leadBtn').onclick = async function () {
   if (!confirm('豪火戰隊：' + rn + '\n榆你相遇：' + wn + '\n\n設定之後同仁馬上可以開始抽，確定嗎？')) return;
   var r = await admin('setLeaders', { red: rn, white: wn });
   r.ok ? load() : say('bad', r.message);
+};
+
+/* 設定面板。只在使用者沒有正在編輯時回填，免得輪詢把他打的字蓋掉。 */
+var CFG_FIELDS = {
+  cRedName: 'redName', cRedCry: 'redCry', cWhiteName: 'whiteName', cWhiteCry: 'whiteCry',
+  cRoleAssault: 'roleAssault', cRoleCannon: 'roleCannon', cRoleSniper: 'roleSniper',
+  cRoleLeader: 'roleLeader', cNameMin: 'nameMin', cNameMax: 'nameMax', cMaxPeople: 'maxPeople'
+};
+function fillConfig(st) {
+  if ($('cfgBox').hasAttribute('open') && document.activeElement
+      && document.activeElement.id && document.activeElement.id.indexOf('c') === 0) return;
+  for (var id in CFG_FIELDS) $(id).value = st[CFG_FIELDS[id]];
+  $('cNameZh').value = st.nameZhOnly ? '1' : '0';
+}
+$('cfgSaveBtn').onclick = async function () {
+  var payload = { nameZhOnly: $('cNameZh').value };
+  for (var id in CFG_FIELDS) payload[CFG_FIELDS[id]] = $(id).value.trim();
+  this.disabled = true; this.textContent = '儲存中⋯';
+  var r = await admin('setConfig', payload);
+  this.disabled = false; this.textContent = '儲存設定';
+  // ⚠️ 這裡不要用 say()：下面的 load() 會把狀態列重畫，訊息一瞬間就被蓋掉。
+  var note = $('cfgNote');
+  note.hidden = false;
+  note.className = 'note ' + (r.ok ? 'good' : 'bad');
+  note.innerHTML = r.ok ? '設定已更新。<b>同仁重新整理就會看到新的隊名與規則。</b>'
+                        : (r.message || '設定沒存進去');
+  if (r.ok) load();
 };
 
 $('openBtn').onclick = async function () {

@@ -437,8 +437,10 @@ var API = window.ROULETTE_API || 'https://script.google.com/macros/s/AKfycbwvQYM
 var API_READY = /^(https?:\/\/|\/)/.test(API);   // 佔位符不是網址，所以會是 false
 
 /* ═══════════════════════════════════════════════════════════
-   要改東西改這裡就好。改完 commit 推上去，約 20 秒後線上生效。
-   隊名、隊呼會自動套到轉盤、結果視窗、名冊、跑馬燈每一個地方。
+   ⚠️ 隊名、隊呼、角色名稱、姓名規則、人數上限這五樣，
+      **主持人在控制台就能改**，改完所有人重新整理就套用，不必動這個檔案。
+      下面這些只是「後端還沒回應之前」先顯示的預設值。
+   其他東西（跑馬燈秒數、轉盤秒數、副標）才要改這裡並推上去。
    ═══════════════════════════════════════════════════════════ */
 var TEAM = {
   RED: {
@@ -494,14 +496,41 @@ var myName = ls(NAME_KEY) || '';
 
 var $ = function (id) { return document.getElementById(id); };
 
-/* 把 TEAM／CONFIG 套進畫面——隊名隊呼只在上面那個區塊寫一次 */
-(function () {
+/** 後端送來的設定蓋掉預設值。主持人在控制台改完，所有人重新整理就套用。 */
+function applySettings(st) {
+  if (!st) return;
+  if (st.redName)   { TEAM.RED.name   = st.redName;   TEAM.RED.short   = st.redName.slice(0, 2); }
+  if (st.whiteName) { TEAM.WHITE.name = st.whiteName; TEAM.WHITE.short = st.whiteName.slice(0, 2); }
+  if (st.redCry)   TEAM.RED.cry   = st.redCry;
+  if (st.whiteCry) TEAM.WHITE.cry = st.whiteCry;
+  if (st.roleAssault) ROLES.ASSAULT = st.roleAssault;
+  if (st.roleCannon)  ROLES.CANNON  = st.roleCannon;
+  if (st.roleSniper)  ROLES.SNIPER  = st.roleSniper;
+  if (st.roleLeader)  ROLES.LEADER  = st.roleLeader;
+  if (st.nameMin) CONFIG.nameMin = st.nameMin;
+  if (st.nameMax) CONFIG.nameMax = st.nameMax;
+  if (st.nameZhOnly != null) CONFIG.nameZhOnly = !!st.nameZhOnly;
+  paintStatic();
+}
+/** 把 TEAM／CONFIG 寫進畫面上那些固定不動的地方 */
+function paintStatic() {
   document.querySelectorAll('[data-team]').forEach(function (el) {
     el.textContent = TEAM[el.getAttribute('data-team')].name;
   });
   document.querySelectorAll('[data-cry]').forEach(function (el) {
     el.textContent = '隊呼：' + TEAM[el.getAttribute('data-cry')].cry;
   });
+  var box = $('nameInput');
+  box.setAttribute('maxlength', String(CONFIG.nameMax));
+  box.setAttribute('placeholder', CONFIG.nameMin === CONFIG.nameMax
+    ? '請輸入' + ['', '一', '二', '三', '四', '五', '六', '七', '八'][CONFIG.nameMin] + '個中文字'
+    : '請輸入 ' + CONFIG.nameMin + '～' + CONFIG.nameMax + ' 個中文字');
+  $('charTag').textContent = box.value.length + '/' + CONFIG.nameMax;
+}
+
+/* 先用預設值畫一次；後端回應回來時 applySettings() 會再蓋一次 */
+(function () {
+  paintStatic();
   $('subTitle').textContent = CONFIG.subtitle;
   $('adminLink').setAttribute('href', CONFIG.adminHref);
 })();
@@ -557,7 +586,7 @@ $('nameInput').addEventListener('input', function () {
   $('charTag').textContent = this.value.length + '/' + CONFIG.nameMax;
   render();                      // 打滿字數，報到鈕就活過來
 });
-$('charTag').textContent = $('nameInput').value.length + '/' + CONFIG.nameMax;
+
 
 /* ── 送出：JSONP。逾時 60 秒，超過 8 秒先安撫 ── */
 var seq = 0, slowTimer = null, inflight = 0;
@@ -764,6 +793,7 @@ function closeDialog() { $('mask').hidden = true; }
 /* ── 動作 ── */
 function apply(r) {
   if (r.ok) {
+    if (r.data.settings) applySettings(r.data.settings);
     ST.phase = r.phase; ST.count = r.data.count; ST.cap = r.data.cap;
     if (r.data.me) ST.me = r.data.me;
     if (r.data.red)   ROSTER.red = r.data.red;

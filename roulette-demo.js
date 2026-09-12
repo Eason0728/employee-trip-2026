@@ -12,6 +12,11 @@
   'use strict';
   var KEY = 'tripRoulette2026DemoState';
   var CAP_FLOOR = 6, MAX_PEOPLE = 56, MIN_CLOSE = 12, PW = 'demo';
+  // 示範模式用預設設定，不開放改（要改設定請接上正式後端）
+  var SETTINGS = { redName: '豪火戰隊', redCry: '火力全開——豪！不！留！情！',
+    whiteName: '榆你相遇隊', whiteCry: '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
+    roleAssault: '突擊手', roleCannon: '重炮手', roleSniper: '狙擊手', roleLeader: '總指揮',
+    nameMin: 3, nameMax: 3, nameZhOnly: true, maxPeople: 56 };
   var ROLE_KEYS = ['ASSAULT', 'CANNON', 'SNIPER'];
 
   function load() {
@@ -63,7 +68,7 @@
   }
   function snap(s, p, extra) {
     var c = counts(s.rows);
-    var d = { me: me(s.rows, p), count: c, cap: caps(c.checkedIn, c.red, c.white) };
+    var d = { me: me(s.rows, p), count: c, cap: caps(c.checkedIn, c.red, c.white), settings: SETTINGS };
     if (extra) for (var k in extra) d[k] = extra[k];
     return { ok: true, phase: s.phase, data: d };
   }
@@ -86,7 +91,7 @@
       });
       var c = counts(s.rows);
       return { ok: true, phase: s.phase, data: { red: red, white: white, me: me(s.rows, p),
-        count: c, cap: caps(c.checkedIn, c.red, c.white) } };
+        count: c, cap: caps(c.checkedIn, c.red, c.white), settings: SETTINGS } };
     }
 
     if (a === 'checkin') {

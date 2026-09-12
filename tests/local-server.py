@@ -20,6 +20,11 @@ import http.server, socketserver, json, random, re, socket, sys, threading, urll
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CAP_FLOOR, MAX_PEOPLE, MIN_CLOSE = 6, 56, 12
 ROLE_KEYS = ['ASSAULT', 'CANNON', 'SNIPER']
+SETTINGS = {'redName': '豪火戰隊', 'redCry': '火力全開——豪！不！留！情！',
+            'whiteName': '榆你相遇隊', 'whiteCry': '從從容容、游刃有餘；匆匆忙忙、連滾帶爬',
+            'roleAssault': '突擊手', 'roleCannon': '重炮手', 'roleSniper': '狙擊手',
+            'roleLeader': '總指揮', 'nameMin': 3, 'nameMax': 3, 'nameZhOnly': True,
+            'maxPeople': 56}
 ADMIN_PW = 'demo'
 
 LOCK = threading.Lock()          # Apps Script 那邊用 LockService，這裡用 threading.Lock，用意一樣
@@ -83,7 +88,8 @@ def me_of(rows, p):
 def snap(p, extra=None):
     rows = STATE['rows']
     c = counts(rows)
-    d = {'me': me_of(rows, p), 'count': c, 'cap': caps(c['checkedIn'], c['red'], c['white'])}
+    d = {'me': me_of(rows, p), 'count': c, 'cap': caps(c['checkedIn'], c['red'], c['white']),
+         'settings': SETTINGS}
     if extra:
         d.update(extra)
     return {'ok': True, 'phase': STATE['phase'], 'data': d}
@@ -120,7 +126,7 @@ def handle(p):
         c = counts(rows)
         return {'ok': True, 'phase': STATE['phase'],
                 'data': {'red': red, 'white': white, 'me': me_of(rows, p), 'count': c,
-                         'cap': caps(c['checkedIn'], c['red'], c['white'])}}
+                         'cap': caps(c['checkedIn'], c['red'], c['white']), 'settings': SETTINGS}}
 
     with LOCK:
         rows = STATE['rows']
@@ -180,6 +186,7 @@ def handle(p):
                               'spins': r['spins'], 'src': r['src'], 'role': r.get('role', '')} for r in rows],
                     'count': c, 'cap': caps(c['checkedIn'], c['red'], c['white']),
                     'leaders': {'red': '', 'white': ''}, 'gate': {'openAt': '', 'openMin': ''},
+                    'settings': SETTINGS,
                     'sheetUrl': 'https://docs.google.com/spreadsheets/d/LOCAL/edit'}}
             if cmd == 'setLeaders':
                 rn, wn = (p.get('red') or '').strip(), (p.get('white') or '').strip()
