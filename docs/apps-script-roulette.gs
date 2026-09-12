@@ -282,11 +282,13 @@ function apiState(p) { return snapshot(readRoster(), p); }
 
 function apiCheckin(p) {
   var name = cleanName(p.name);
-  var bad = nameProblem(name);
-  if (bad) return err('BAD_NAME', bad);
+  if (!name) return err('BAD_NAME', '請輸入你的名字');
   return withLock(function () {
     var rows = readRoster();
+    // 已經在名冊裡的人直接回他的狀態，不重驗姓名規則（規則可能在他報到之後才改嚴）
     if (findByName(rows, name)) return snapshot(rows, { name: name, dev: p.dev });
+    var bad = nameProblem(name);
+    if (bad) return err('BAD_NAME', bad);
     if (rows.length >= cfg().maxPeople) return err('ROSTER_FULL', '人數已經滿了（上限 ' + cfg().maxPeople + ' 人）');
     appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
     rows.push({ row: rows.length + 2, name: name, dev: String(p.dev || ''),
@@ -307,8 +309,7 @@ function gateBlocked(checkedIn) {
 
 function apiSpin(p) {
   var name = cleanName(p.name);
-  var badName = nameProblem(name);
-  if (badName) return err('BAD_NAME', badName);
+  if (!name) return err('BAD_NAME', '請輸入你的名字');
   if (getPhase() !== 'DRAW') return err('NOT_OPEN', '現在還不能抽');
 
   return withLock(function () {
@@ -318,6 +319,10 @@ function apiSpin(p) {
 
     var me = findByName(rows, name);
     if (!me) {
+      // ⚠️ 姓名規則只檢查「新的人」。已經在名冊裡的人不能因為主持人中途把規則改嚴
+      //    就被卡在半路抽不了——那會讓他既抽不到、又佔著一個名額擋住封盤。
+      var badName = nameProblem(name);
+      if (badName) return err('BAD_NAME', badName);
       if (rows.length >= cfg().maxPeople) return err('ROSTER_FULL', '人數已經滿了（上限 ' + cfg().maxPeople + ' 人）');
       appendPerson(name, p.dev, '', 'CHECKED_IN', 0, 'SELF');
       logEvent(name, 'CHECKIN', '', p.dev);

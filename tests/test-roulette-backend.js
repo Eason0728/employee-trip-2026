@@ -312,6 +312,22 @@ section('4c. 姓名規則：預設三個中文字，主持人可從控制台改'
   eq(A({ cmd: 'setConfig', redName: '' }).ok, true, '空白欄位視為不修改');
 }
 {
+  // ⚠️ 主持人中途把規則改嚴，已經報到的人不能被卡住——
+  //    那會讓他既抽不到、又佔著一個名額擋住封盤。
+  const B = bootStrict();
+  const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
+  A({ cmd: 'setConfig', nameMin: '2', nameMax: '4' });
+  A({ cmd: 'setLeaders', red: '紅指揮', white: '白指揮' });
+  eq(B.route({ action: 'checkin', name: '王恬', dev: dev(1) }).ok, true, '放寬時兩個字報得了到');
+  A({ cmd: 'setConfig', nameMin: '3', nameMax: '3' });
+  const sp = B.route({ action: 'spin', name: '王恬', dev: dev(1) });
+  eq(sp.ok, true, '規則事後改嚴，已經報到的人照樣抽得了');
+  eq(B.route({ action: 'confirm', name: '王恬', dev: dev(1) }).ok, true, '也確認得了');
+  eq(B.route({ action: 'checkin', name: '李昀', dev: dev(2) }).error, 'BAD_NAME', '但新的人要照新規則');
+  eq(B.route({ action: 'spin', name: '李昀', dev: dev(2) }).error, 'BAD_NAME', '新的人直接抽也擋');
+  eq(A({ cmd: 'close' }).error, 'TOO_FEW', '沒有人卡在「報到未抽」擋住封盤');
+}
+{
   const B = bootStrict();
   const A = p => B.route(Object.assign({ action: 'admin', pw: PW }, p));
   const st = A({ cmd: 'stats' }).data.settings;

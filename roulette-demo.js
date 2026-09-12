@@ -96,7 +96,7 @@
 
     if (a === 'checkin') {
       if (!n) return bad(s, 'BAD_NAME', '請先輸入姓名');
-      if (find(s.rows, n)) return snap(s, p);
+      if (find(s.rows, n)) return snap(s, p);   // 已經在名冊裡就不重驗規則
       if (s.rows.length >= MAX_PEOPLE) return bad(s, 'ROSTER_FULL', '人數已經滿了（上限 56 人）');
       s.rows.push({ name: n, dev: p.dev || '', team: null, status: 'CHECKED_IN', spins: 0, src: 'SELF', role: '' });
       save(s); return snap(s, p);
