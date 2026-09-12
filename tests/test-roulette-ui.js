@@ -198,13 +198,14 @@ function backend(p) {
   await page.click('#reloadBtn');
   await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
     null, { timeout: 9000 });
-  eq(await page.$eval('#spinBtn', e => e.disabled), true, '抽籤開放了，但沒打名字時轉盤仍是死的');
+  eq(await page.$eval('#spinBtn', e => e.disabled), true, '抽籤開放了，但沒打名字時轉盤是死的');
+  eq(await page.$eval('#checkinBtn', e => e.disabled), true, '沒打名字時「報到」也是死的');
   await page.fill('#nameInput', '甲');
-  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
-  eq(await page.$eval('#spinBtn', e => e.disabled), false, '打了第一個字轉盤就活過來');
+  await page.waitForFunction(() => !document.getElementById('checkinBtn').disabled, null, { timeout: 5000 });
+  eq(await page.$eval('#checkinBtn', e => e.disabled), false, '打了字「報到」才活');
+  eq(await page.$eval('#spinBtn', e => e.disabled), true, '只打名字、還沒報到，轉盤仍是死的');
   await page.fill('#nameInput', '');
-  await page.waitForFunction(() => document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
-  eq(await page.$eval('#spinBtn', e => e.disabled), true, '名字刪光又變回死的');
+  await page.waitForFunction(() => document.getElementById('checkinBtn').disabled, null, { timeout: 5000 });
   eq(S.rows.length, 0, '整段過程後端一筆資料都沒產生');
   S.phase = 'CHECKIN';
   await page.click('#reloadBtn');
@@ -224,6 +225,8 @@ function backend(p) {
   eq(S.rows.length, 1, '後端收到 1 筆報到');
   eq(S.rows[0].name, '測試甲', '姓名前後空白被去掉');
   eq((await txt(page, '#capTag')).replace(/\s+/g, ' '), '報到 1 · 名額 6/6', '名額用起始下限撐成 6 對 6');
+  eq(await txt(page, '#checkinBtn'), '已報到', '報到之後按鈕變成「已報到」');
+  eq(await page.$eval('#checkinBtn', e => e.disabled), true, '報到之後不用再按一次');
   // 50 人時頁首曾被「名額 25/25」擠成兩行，名額因此搬到戰況卡
   eq(await page.$eval('#capTag', e => e.closest('header') !== null), false, '名額不放在頁首');
 
@@ -267,9 +270,9 @@ function backend(p) {
   ({ ctx, page } = await openPage('roulette.html'));            // 全新裝置
   await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
     null, { timeout: 9000 });
-  await page.fill('#nameInput', '測試甲');                       // 先打名字，按鈕才會活
-  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
-  await page.click('#spinBtn');
+  await page.fill('#nameInput', '測試甲');                       // 換裝置：先報到，會把既有結果帶回來
+  await page.waitForFunction(() => !document.getElementById('checkinBtn').disabled, null, { timeout: 5000 });
+  await page.click('#checkinBtn');
   await page.waitForFunction(() => !document.getElementById('mine').hidden, null, { timeout: 15000 });
   ok((await txt(page, '#mineSub')).includes('測試甲'), '換一支手機打同一個名字 → 看到原結果，不能重抽');
   eq(S.rows.find(r => r.name === '測試甲').spins, 1, '換裝置沒有讓抽籤次數增加');
@@ -281,7 +284,8 @@ function backend(p) {
   await page.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
     null, { timeout: 9000 });
   await page.fill('#nameInput', '測試乙');
-  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
+  await page.click('#checkinBtn');
+  await page.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 9000 });
   await page.click('#spinBtn');
   await page.waitForSelector('#mask:not([hidden])', { timeout: 15000 });
   await page.click('#dlgActs .btn >> text=再次抽籤');       // 再次抽籤
@@ -303,7 +307,8 @@ function backend(p) {
     await p2.waitForFunction(() => document.getElementById('phaseTag').textContent === '抽籤進行中',
       null, { timeout: 9000 });
     await p2.fill('#nameInput', '斷線丙');
-    await p2.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 5000 });
+    await p2.click('#checkinBtn');
+    await p2.waitForFunction(() => !document.getElementById('spinBtn').disabled, null, { timeout: 9000 });
     truncateNextSpin = true;
     await p2.click('#spinBtn');
     // 應該自己去問一次狀態，然後把「已經抽到的結果」顯示出來，而不是讓他再按一次轉

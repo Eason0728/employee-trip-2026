@@ -520,8 +520,11 @@ function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^=
   $('ticks').innerHTML = p.join('');
 })();
 
-function hasName() {
-  return (($('nameInput').value || myName) || '').trim().length > 0;
+function typedName() { return (($('nameInput').value || myName) || '').trim(); }
+function hasName() { return typedName().length > 0; }
+/** 有沒有用「現在框裡這個名字」報到過。改了名字就要重新報到，不能沿用別人的報到 */
+function checkedIn() {
+  return ST.me.status !== 'NONE' && ST.me.name === typedName();
 }
 $('nameInput').addEventListener('input', function () {
   $('charTag').textContent = this.value.length + '/20';
@@ -593,9 +596,11 @@ function render() {
   $('hudBR').textContent = 'LOCK: ' + (LOCK_TXT[ST.phase] || '—');
   $('dlgLock').innerHTML = 'LOCK: <b>' + (LOCK_TXT[ST.phase] || '—') + '</b>';
 
-  var known = me.status !== 'NONE';
-  var locked = me.status === 'LOCKED';
-  $('idcard').hidden = known && locked;
+  var known = checkedIn();
+  var locked = known && me.status === 'LOCKED';
+  $('idcard').hidden = locked;
+  $('checkinBtn').disabled = !hasName() || known;
+  $('checkinBtn').textContent = known ? '已報到' : '報到';
 
   $('mine').hidden = !locked;
   if (locked) {
@@ -605,9 +610,9 @@ function render() {
     $('mineSub').textContent = me.name + ' · ' + (ROLES[me.role] || '角色待定') + ' · ' + TEAM[me.team].tag;
   }
 
-  // 沒輸入名字就不該按得下去。原本按鈕是活的、按了只跳一行紅字，
-  // 看起來像「沒輸入名字也能啟動轉盤」。
-  var canSpin = ST.phase === 'DRAW' && !locked && hasName();
+  // 要先按過「報到」轉盤才會活（Eason 2026-09-12 指定）。
+  // 在那之前按鈕是死的——原本按鈕永遠是活的、按了只跳一行紅字，看起來像壞掉。
+  var canSpin = ST.phase === 'DRAW' && !locked && known;
   $('spinBtn').disabled = !canSpin;
   $('spinBtn').className = 'hub' + (canSpin ? ' live' : '');
 
@@ -622,9 +627,9 @@ function render() {
   } else if (me.status === 'PENDING') {
     say('warn', '你抽到 <b>' + TEAM[me.team].name + '</b>，還沒定案。要留著就按確認，要再抽一次就按重抽。');
   } else if (!hasName()) {
-    say('', '先在上面輸入你的名字，中間那顆「選擇陣營」才會亮起來。');
+    say('', '第一步：在上面輸入你的名字。');
   } else if (!known) {
-    say('', '輸入好了，直接按中間那顆「選擇陣營」就可以抽。');
+    say('', '第二步：按右邊的「報到」。報到之後中間那顆「選擇陣營」才會亮起來。');
   } else {
     say('', '<b>' + me.name + '</b>，可以抽了。按中間那顆「選擇陣營」。<br>你有兩次機會：第一次可以留可以重抽，<b>第二次直接定案</b>。');
   }
@@ -723,12 +728,13 @@ $('checkinBtn').onclick = async function () {
   busy(false); this.disabled = false;
   if (!r.ok) { say('bad', r.message || '報到失敗，再試一次。'); return; }
   apply(r);
-  say('good', '<b>' + n + '</b> 報到完成。' + (ST.phase === 'DRAW' ? '可以按中間那顆「選擇陣營」了。' : '等主持人開始。'));
+  say('good', '<b>' + n + '</b> 報到完成。' + (ST.phase === 'DRAW' ? '現在可以按中間那顆「選擇陣營」了。' : '等主持人開始。'));
 };
 
 $('spinBtn').onclick = async function () {
-  var n = ($('nameInput').value || myName).trim();
-  if (!n) { say('bad', '請先輸入你的名字再抽。'); return; }
+  var n = typedName();
+  if (!n) { say('bad', '請先輸入你的名字。'); return; }
+  if (!checkedIn()) { say('bad', '請先按右邊的「報到」。'); return; }
   myName = n; ls(NAME_KEY, n);
   this.disabled = true; busy(true, '抽');
   var r = await call({ action: 'spin', name: n, dev: dev });
